@@ -356,6 +356,14 @@ html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; font-siz
   transition: all 0.15s;
 }
 .btn-speak:hover { background: var(--blue-light); border-color: var(--blue-border); color: var(--blue); }
+.btn-mic {
+  background: var(--blue); color: #fff; border: none; border-radius: 8px;
+  font-family: inherit; font-size: 12px; font-weight: 600; padding: 8px 16px;
+  cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+}
+.btn-mic:hover { background: #1d4ed8; }
+.btn-mic.recording { background: var(--red); animation: pulse-btn 1s ease-in-out infinite; }
+@keyframes pulse-btn { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.4); } 50% { box-shadow: 0 0 0 8px rgba(220,38,38,0); } }
 
 /* ── TREND CHART CARD ── */
 .chart-wrap { position: relative; height: 150px; }
@@ -581,11 +589,6 @@ html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; font-siz
     </select>
   </div>
   <div class="header-right">
-    <div class="nim-key-wrap">
-      <div class="selector-label" style="white-space:nowrap">NIM Key</div>
-      <input class="nim-key-input" id="nimKey" type="password" placeholder="nvapi-… (optional)">
-    </div>
-    <div class="header-divider"></div>
     <div class="status-dot-wrap">
       <div class="status-dot" id="statusDot"></div>
       <span id="statusLabel">Connecting…</span>
@@ -860,6 +863,15 @@ html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; font-siz
             <div class="empty-sub">Load a patient to see their clinical notes</div>
           </div>
           <div id="notesContent" style="display:none">
+            <!-- Voice Note Input -->
+            <div class="card" style="margin-bottom:16px;padding:16px">
+              <div style="font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:12px">🎙️ Voice Note Input</div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <button class="btn-mic" id="micBtn" onclick="toggleRecording()">🎤 Start Recording</button>
+                <div id="recStatus" style="font-size:12px;color:var(--text-3)">Click to record a clinical note via microphone</div>
+              </div>
+              <div id="sttTranscript" style="display:none;margin-top:12px;padding:10px;background:var(--blue-light);border:1px solid var(--blue-border,#bfdbfe);border-radius:6px;font-size:13px;color:var(--text-2)"></div>
+            </div>
             <!-- Parsed findings from AI -->
             <div id="parsedFindings" style="margin-bottom:16px"></div>
             <!-- Raw notes -->
@@ -1298,7 +1310,7 @@ async function runDiagnostics() {
 
   setPipe(1, 'active');
 
-  const nimKey = document.getElementById('nimKey').value.trim();
+  const nimKey = ''; // keys are loaded from server .env
   const pt = state.currentPatient;
 
   if (state.ws) { try { state.ws.close(); } catch {} }
@@ -1801,11 +1813,77 @@ async function speakSynthesis() {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ text: state.synthesisAccum.substring(0, 1000) })
     });
-    const blob = await r.blob();
+    const d = await r.json();
+    if (!d.available || !d.audio_b64) { console.warn('TTS unavailable:', d.message); return; }
+    const bytes = Uint8Array.from(atob(d.audio_b64), c => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: 'audio/wav' });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.play();
+    audio.onended = () => URL.revokeObjectURL(url);
   } catch (e) { console.error('TTS error:', e); }
+}
+
+// ── STT RECORDING ────────────────────────────────────────
+let _mediaRec = null, _recChunks = [];
+
+async function toggleRecording() {
+  const btn = document.getElementById('micBtn');
+  const status = document.getElementById('recStatus');
+  const transcriptBox = document.getElementById('sttTranscript');
+
+  if (_mediaRec && _mediaRec.state === 'recording') {
+    // Stop recording
+    _mediaRec.stop();
+    btn.textContent = '🎤 Start Recording';
+    btn.classList.remove('recording');
+    status.textContent = 'Processing…';
+    return;
+  }
+
+  // Start recording
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _recChunks = [];
+    _mediaRec = new MediaRecorder(stream);
+    _mediaRec.ondataavailable = e => { if (e.data.size) _recChunks.push(e.data); };
+    _mediaRec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(_recChunks, { type: 'audio/webm' });
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const b64 = reader.result.split(',')[1];
+        status.textContent = 'Transcribing…';
+        try {
+          const r = await fetch(`${API}/api/voice/transcribe`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ audio_b64: b64 })
+          });
+          const d = await r.json();
+          if (d.text) {
+            transcriptBox.style.display = 'block';
+            transcriptBox.innerHTML = `<strong>Transcript:</strong> ${escHtml(d.text)}`;
+            status.textContent = 'Transcription complete';
+          } else {
+            status.textContent = d.message || 'No speech detected — try again';
+            transcriptBox.style.display = 'none';
+          }
+        } catch (e) {
+          status.textContent = 'Transcription error — check server';
+          console.error('STT error:', e);
+        }
+      };
+      reader.readAsDataURL(blob);
+    };
+    _mediaRec.start();
+    btn.textContent = '⏹ Stop Recording';
+    btn.classList.add('recording');
+    status.textContent = '🔴 Recording… speak now';
+    transcriptBox.style.display = 'none';
+  } catch (e) {
+    status.textContent = 'Microphone access denied — check browser permissions';
+    console.error('Mic error:', e);
+  }
 }
 
 // ── UTILITIES ────────────────────────────────────────

@@ -450,10 +450,15 @@ async def voice_transcribe(req: TranscribeRequest) -> Dict[str, Any]:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 audio")
 
-    transcript = await transcribe_audio(audio_bytes)
-    if transcript is None:
+    from .voice_workflow import _get_stt_model
+    model = await _get_stt_model()
+    if model is None:
         return {"available": False, "text": None,
-                "message": "No speech detected or audio format not recognised (send WAV/WebM/MP3)."}
+                "message": "STT engine not available on server."}
+    transcript = await transcribe_audio(audio_bytes)
+    if not transcript:
+        return {"available": True, "text": None,
+                "message": "No speech detected — speak clearly and try again."}
     return {"available": True, "text": transcript}
 
 
