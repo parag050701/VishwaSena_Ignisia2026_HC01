@@ -1033,6 +1033,16 @@ select:focus, input:focus { border-color: var(--green); }
 @media (max-width: 1100px) {
   .main-grid { grid-template-columns: 250px 1fr 270px; }
 }
+
+/* ══════════════════════════════════════════════════
+   TIMELINE EVENTS
+══════════════════════════════════════════════════ */
+.timeline-event { display:flex; gap:10px; padding:5px 0; border-bottom:1px solid var(--border); font-size:10px; }
+.timeline-time { color:var(--text3); flex-shrink:0; min-width:80px; }
+.timeline-flag { flex-shrink:0; min-width:70px; font-weight:600; }
+.flag-CRITICAL { color:var(--red); }
+.flag-ABNORMAL { color:var(--amber); }
+.flag-NORMAL { color:var(--green); }
 </style>
 </head>
 <body>
@@ -1048,9 +1058,7 @@ select:focus, input:focus { border-color: var(--green); }
   <div class="patient-select-group">
     <div class="field-label">PATIENT</div>
     <select id="patientSelect" aria-label="Patient selector" title="Patient selector" onchange="loadPatient(this.value)">
-      <option value="P001">P001 — Chen Wei, 67M — Suspected Sepsis</option>
-      <option value="P002">P002 — Rodriguez M., 54F — Post-op ARDS</option>
-      <option value="P003">P003 — Okafor K., 72M — AKI Monitoring</option>
+      <option value="">Loading patients...</option>
     </select>
   </div>
   <div class="header-divider"></div>
@@ -1076,22 +1084,32 @@ select:focus, input:focus { border-color: var(--green); }
 <div class="pipeline-bar">
   <div class="pipe-step" id="pipe-1">
     <span class="step-icon">&#9670;</span>
-    <div><div class="step-name">Note Parser</div><div class="step-model" id="pipe1-model">qwen2.5:4b · LOCAL</div></div>
+    <div><div class="step-name">Note Parser</div><div class="step-model" id="pipe1-model">qwen3:4b · LOCAL</div></div>
   </div>
   <span class="pipe-arrow">&#8250;</span>
   <div class="pipe-step" id="pipe-2">
     <span class="step-icon">&#9670;</span>
-    <div><div class="step-name">Lab Mapper</div><div class="step-model">Z-score · JS Logic</div></div>
+    <div><div class="step-name">Lab Temporal</div><div class="step-model">Trend+Trajectory+Timeline</div></div>
   </div>
   <span class="pipe-arrow">&#8250;</span>
   <div class="pipe-step" id="pipe-3">
     <span class="step-icon">&#9670;</span>
-    <div><div class="step-name">RAG · bge-m3</div><div class="step-model" id="pipe3-model">bge-m3 embed · LOCAL</div></div>
+    <div><div class="step-name">RAG Evidence</div><div class="step-model" id="pipe3-model">nomic-embed-text · LOCAL</div></div>
   </div>
   <span class="pipe-arrow">&#8250;</span>
   <div class="pipe-step" id="pipe-4">
     <span class="step-icon">&#9670;</span>
-    <div><div class="step-name">Chief Synthesis</div><div class="step-model">Nemotron-70B · NIM</div></div>
+    <div><div class="step-name">Chief Synthesis</div><div class="step-model">Nemotron-120B · NIM</div></div>
+  </div>
+  <span class="pipe-arrow">&#8250;</span>
+  <div class="pipe-step" id="pipe-5">
+    <span class="step-icon">&#9670;</span>
+    <div><div class="step-name">SOFA Priority</div><div class="step-model">MIMIC-IV scoring</div></div>
+  </div>
+  <span class="pipe-arrow">&#8250;</span>
+  <div class="pipe-step" id="pipe-6">
+    <span class="step-icon">&#9670;</span>
+    <div><div class="step-name">Complete</div><div class="step-model">pipeline done</div></div>
   </div>
   <div class="header-status-group">
     <div id="systemStatus" class="system-status">STANDBY</div>
@@ -1112,6 +1130,29 @@ select:focus, input:focus { border-color: var(--green); }
       <div class="patient-meta" id="ptMeta">—</div>
       <div id="ptBadge"></div>
       <div id="riskChips" class="risk-chip-row"></div>
+    </div>
+
+    <!-- Data Ingestion Card -->
+    <div class="card" id="dataIngestionCard">
+      <div class="card-title">Data Ingestion Source</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="btn btn-amber" style="font-size:10px;padding:4px 10px" onclick="toggleIngestionMode('voice')">&#127908; VOICE STT</button>
+        <button class="btn btn-green" style="font-size:10px;padding:4px 10px" onclick="toggleIngestionMode('note')">&#9998; INJECT NOTE</button>
+      </div>
+      <div id="ingestionVoicePanel" style="display:none;margin-top:4px">
+        <div style="font-size:9px;color:var(--text3);margin-bottom:4px">Record audio note, then transcribe via backend STT</div>
+        <button class="btn btn-red" id="micBtn" style="font-size:10px;padding:4px 12px;width:100%;margin-bottom:4px" onclick="toggleMicRecording()">&#9679; START RECORDING</button>
+        <div id="micStatus" style="font-size:9px;color:var(--text3);min-height:14px"></div>
+        <div id="sttResult" style="font-size:10px;color:var(--text2);margin-top:4px;min-height:20px;white-space:pre-wrap"></div>
+      </div>
+      <div id="ingestionNotePanel" style="display:none;margin-top:4px">
+        <div style="font-size:9px;color:var(--text3);margin-bottom:4px">Type or paste a clinical note to inject</div>
+        <textarea id="injectNoteText" style="width:100%;height:70px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font:10px var(--mono);padding:5px;resize:vertical" placeholder="e.g. 10:30 Nurse: BP dropped to 85/55, started norepinephrine..."></textarea>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <button class="btn btn-green" style="font-size:10px;padding:3px 10px" onclick="injectNote()">INJECT</button>
+          <span id="injectStatus" style="font-size:9px;color:var(--green);line-height:26px"></span>
+        </div>
+      </div>
     </div>
 
     <!-- Vitals Grid -->
@@ -1172,6 +1213,22 @@ select:focus, input:focus { border-color: var(--green); }
       <div class="news2-breakdown" id="news2Breakdown"></div>
     </div>
 
+    <!-- Priority Score Card -->
+    <div class="card" id="priorityScoreCard">
+      <div class="card-title">Priority Score</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="text-align:center">
+          <div style="font-size:9px;color:var(--text3);letter-spacing:0.15em;margin-bottom:2px">SOFA</div>
+          <div id="prioritySofaNum" style="font-size:38px;font-weight:700;font-family:var(--sans);line-height:1;color:var(--text)">—</div>
+        </div>
+        <div style="flex:1">
+          <div id="priorityBadge" style="font-size:10px;font-weight:600;letter-spacing:0.12em;padding:3px 10px;border:1px solid var(--border);display:inline-block;margin-bottom:5px">—</div>
+          <div id="priorityMortality" style="font-size:9px;color:var(--text3)">Predicted mortality: —</div>
+          <div id="priorityNews2" style="font-size:9px;color:var(--text2);margin-top:2px">NEWS2: — · —</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Medications -->
     <div class="card">
       <div class="card-title">Medications &amp; Conflicts</div>
@@ -1189,6 +1246,7 @@ select:focus, input:focus { border-color: var(--green); }
       <button class="tab-btn active" id="tabBtnReport" onclick="switchTab('report')">REPORT</button>
       <button class="tab-btn" id="tabBtnLog" onclick="switchTab('log')">LOG</button>
       <button class="tab-btn" id="tabBtnDiff" onclick="switchTab('diff')">DIFFERENTIAL</button>
+      <button class="tab-btn" id="tabBtnTimeline" onclick="switchTab('timeline')">TIMELINE</button>
       <button id="devilToggle" class="devil-toggle" onclick="toggleDevilMode()">⚖ COUNTER-ARGUMENT</button>
     </div>
     <div id="devilPanel" class="devil-panel"></div>
@@ -1241,6 +1299,7 @@ select:focus, input:focus { border-color: var(--green); }
           <div class="orch-agents">
             <div class="orch-agent-row"><div class="orch-dot" id="dot-TREND_CLASSIFIER"></div>Trend Classifier · LinReg</div>
             <div class="orch-agent-row"><div class="orch-dot" id="dot-TRAJECTORY_PREDICTOR"></div>Trajectory Predictor · MIMIC-IV</div>
+            <div class="orch-agent-row"><div class="orch-dot" id="dot-TEMPORAL_LAB_MAPPER"></div>Temporal Lab Mapper · chronological</div>
           </div>
         </div>
         <!-- Evidence Retrieval -->
@@ -1322,6 +1381,15 @@ select:focus, input:focus { border-color: var(--green); }
         <div class="card-title">Differential Diagnosis Ranking</div>
         <div class="diff-list" id="diffListSecondary">
           <div class="empty-state">Awaiting Chief Agent synthesis</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-timeline" class="tab-content">
+      <div class="card">
+        <div class="card-title">Disease Timeline <span style="font-size:8px;color:var(--text3)">[TEMPORAL_LAB_MAPPER]</span></div>
+        <div id="diseaseTimeline">
+          <div class="empty-state">Awaiting temporal lab mapping...</div>
         </div>
       </div>
     </div>
@@ -1621,6 +1689,27 @@ const PATIENTS = {
   }
 };
 
+// Default lab reference ranges for API-loaded patients (no pt.refs available)
+const DEFAULT_LAB_REFS = {
+  wbc:           { low: 4.5,  high: 11.0, unit: '×10³/μL' },
+  lactate:       { low: 0.5,  high: 2.0,  unit: 'mmol/L' },
+  creatinine:    { low: 0.6,  high: 1.2,  unit: 'mg/dL' },
+  platelets:     { low: 150,  high: 400,  unit: '×10³/μL' },
+  bilirubin:     { low: 0.1,  high: 1.2,  unit: 'mg/dL' },
+  procalcitonin: { low: 0.0,  high: 0.5,  unit: 'ng/mL' },
+  bun:           { low: 7,    high: 20,   unit: 'mg/dL' },
+  sodium:        { low: 136,  high: 145,  unit: 'mEq/L' },
+  potassium:     { low: 3.5,  high: 5.0,  unit: 'mEq/L' },
+  glucose:       { low: 70,   high: 110,  unit: 'mg/dL' },
+  hemoglobin:    { low: 12.0, high: 16.0, unit: 'g/dL' },
+  hematocrit:    { low: 36,   high: 46,   unit: '%' },
+  inr:           { low: 0.8,  high: 1.2,  unit: '' },
+  fibrinogen:    { low: 200,  high: 400,  unit: 'mg/dL' },
+  albumin:       { low: 3.5,  high: 5.0,  unit: 'g/dL' },
+  alt:           { low: 7,    high: 56,   unit: 'U/L' },
+  ast:           { low: 10,   high: 40,   unit: 'U/L' },
+};
+
 const MIMIC_PATTERNS = [
   {
     id: 'sepsis_high_lactate',
@@ -1684,8 +1773,11 @@ let sepsisActionsState = { antibiotics: false, cultures: false, fluids: false };
 let explainState   = {};
 let devilModeVisible = false;
 let devilGeneratedForPatient = null;
-let wardSort = { key: 'sofa', dir: 'desc' };
+let wardSort = { key: 'alert_level', dir: 'asc' };
 let lastAnalysisContext = null;
+let mediaRecorder   = null;
+let audioChunks     = [];
+let allPatientsCache = [];  // cache from API
 
 // ══════════════════════════════════════════════════
 // WEBSOCKET CLIENT (server.py multi-orchestrator)
@@ -1700,6 +1792,11 @@ async function checkBackend() {
       document.getElementById('backendMode').style.color = 'var(--green)';
       logAgent('HC01', `Backend online — Ollama:${d.ollama_online} embeds:${d.guideline_embeds_ready} models:[${d.ollama_models?.join(',')}]`, 'success');
       updateModelRoutingUI(d.ollama_online ? 'online' : 'offline');
+      // Show backend model info
+      const p1 = document.getElementById('pipe1-model');
+      const p3 = document.getElementById('pipe3-model');
+      if (p1) p1.textContent = 'qwen3:4b · LOCAL';
+      if (p3) p3.textContent = 'nomic-embed-text · LOCAL';
     }
   } catch {
     backendOnline = false;
@@ -1755,7 +1852,14 @@ function handleBackendMessage(msg) {
     case 'agent_status': {
       setAgentDot(msg.agent, msg.status);
       // Also update pipeline bar
-      const pipeMap = {NOTE_PARSER:1, TREND_CLASSIFIER:2, SEMANTIC_RETRIEVER:3, CHIEF_AGENT:4};
+      const pipeMap = {
+        NOTE_PARSER: 1,
+        TREND_CLASSIFIER: 2, TRAJECTORY_PREDICTOR: 2, TEMPORAL_LAB_MAPPER: 2,
+        SEMANTIC_RETRIEVER: 3, RAG_EXPLAINER: 3,
+        CHIEF_AGENT: 4,
+        SOFA_NEWS2: 5,
+        OUTLIER_DETECTOR: 2, MED_SAFETY: 2, ALERT_ESCALATION: 2
+      };
       let pipeStatus = msg.status;
       if (msg.status === 'active') pipeStatus = 'active';
       else if (msg.status === 'done') pipeStatus = 'done';
@@ -1783,6 +1887,10 @@ function handleBackendMessage(msg) {
       el.querySelector('.cursor-blink')?.remove();
       document.getElementById('systemStatus').textContent = 'COMPLETE';
       logAgent('HC01', `Pipeline complete in ${msg.duration_ms}ms — Alert: ${msg.alert_level}`, 'success');
+      setPipe(5, 'done');
+      setPipe(6, 'done');
+      // Update priority card from pipeline_complete data
+      if (msg.sofa_total !== undefined) updatePriorityCard(msg.sofa_total, null, msg.alert_level);
       const btn = document.getElementById('runBtn');
       btn.disabled = false;
       btn.innerHTML = '&#9654; RUN DIAGNOSTICS';
@@ -1807,15 +1915,25 @@ function handleAgentResult(orch, agent, data) {
   if (agent === 'ALERT_ESCALATION') renderAlertPanel(data);
   if (agent === 'TREND_CLASSIFIER') { /* lab findings logged */ }
   if (agent === 'TRAJECTORY_PREDICTOR') renderTrajectoryGrid(data);
+  if (agent === 'TEMPORAL_LAB_MAPPER') {
+    setAgentDot('TEMPORAL_LAB_MAPPER', 'done');
+    if (data && data.timeline) {
+      renderDiseaseTimeline(data.timeline);
+    }
+  }
   if (agent === 'SEMANTIC_RETRIEVER') renderRAGFromBackend(data);
   if (agent === 'RAG_EXPLAINER') appendRAGExplanation(data.explanation);
   if (agent === 'SOFA_NEWS2') {
-    if (data.sofa)  document.getElementById('sofaTotal').textContent = data.sofa.total;
+    if (data.sofa) {
+      document.getElementById('sofaTotal').textContent = data.sofa.total;
+      updatePriorityCard(data.sofa.total, data.news2, null);
+    }
     if (data.news2) {
       const n2 = document.getElementById('news2Number');
       n2.textContent = data.news2.total;
       n2.className = `news2-number ${data.news2.level==='HIGH'?'news2-color-high':data.news2.level==='MEDIUM'?'news2-color-medium':'news2-color-low'}`;
     }
+    setPipe(5, 'done');
   }
   if (agent === 'CHIEF_AGENT' && data.synthesis) {
     const el = document.getElementById('synthesisOutput');
@@ -1950,16 +2068,18 @@ function setPipe(n, state) {
   el.className = `pipe-step ${state}`;
 }
 
-function selectPatientByIndex(idx) {
-  const keys = Object.keys(PATIENTS);
+async function selectPatientByIndex(idx) {
+  const keys = allPatientsCache.length
+    ? allPatientsCache.map(p => p.fhir_id)
+    : Object.keys(PATIENTS);
   const id = keys[idx] || keys[0];
   const sel = document.getElementById('patientSelect');
   if (sel) sel.value = id;
-  loadPatient(id);
+  await loadPatient(id);
 }
 
 function switchTab(tabName) {
-  const tabs = ['report', 'log', 'diff'];
+  const tabs = ['report', 'log', 'diff', 'timeline'];
   tabs.forEach(name => {
     const btn = document.getElementById(`tabBtn${name.charAt(0).toUpperCase()}${name.slice(1)}`);
     const panel = document.getElementById(`tab-${name}`);
@@ -1996,7 +2116,7 @@ function patientStatus(pt, sofa, news2, lactate) {
 }
 
 function trajectoryFromLabs(pt) {
-  const arr = pt.labs.lactate || [];
+  const arr = Array.isArray(pt.labs?.lactate) ? pt.labs.lactate : [];
   if (arr.length < 2) return { label: 'STABLE', badge: '→', cls: 'chip-green' };
   const delta = arr[arr.length - 1].v - arr[0].v;
   if (delta > 1.0) return { label: 'DETERIORATING', badge: '▲▲', cls: 'chip-red' };
@@ -2004,25 +2124,51 @@ function trajectoryFromLabs(pt) {
   return { label: 'STABLE', badge: '→', cls: 'chip-green' };
 }
 
-function renderWardBoard() {
-  const rows = Object.values(PATIENTS).map(pt => {
-    const sofa = calcSOFA(pt).total;
-    const news2 = calcNEWS2(pt).total;
-    const lactate = pt.labs.lactate[pt.labs.lactate.length - 1].v;
-    const creatinine = pt.labs.creatinine[pt.labs.creatinine.length - 1].v;
-    const status = patientStatus(pt, sofa, news2, lactate);
-    const traj = trajectoryFromLabs(pt);
-    return { id: pt.id, name: pt.name, sofa, news2, lactate, creatinine, status, traj };
-  });
+async function renderWardBoard() {
+  document.getElementById('wardSummary').textContent = 'Loading ward data...';
+  let apiPatients = allPatientsCache;
+  if (!apiPatients.length) {
+    try {
+      const r = await fetch(`${CONFIG.BACKEND_HTTP}/api/fhir-local/patients`, { signal: AbortSignal.timeout(4000) });
+      if (r.ok) { apiPatients = await r.json(); allPatientsCache = apiPatients; }
+    } catch {}
+  }
 
-  const k = wardSort.key;
-  const dir = wardSort.dir === 'asc' ? 1 : -1;
-  rows.sort((a, b) => {
-    const av = a[k];
-    const bv = b[k];
-    if (typeof av === 'string') return av.localeCompare(bv) * dir;
-    return (av - bv) * dir;
-  });
+  let rows;
+  if (apiPatients.length) {
+    // API-sourced ward board
+    const alertOrder = { CRITICAL: 0, WARNING: 1, WATCH: 2, NORMAL: 3 };
+    rows = apiPatients.map(p => ({
+      id: p.fhir_id,
+      name: p.name,
+      sofa: p.sofa_estimate ?? 0,
+      news2: '—',
+      lactate: '—',
+      creatinine: '—',
+      status: p.alert_level || 'NORMAL',
+      traj: { label: p.trajectory || 'STABLE', badge: p.trajectory === 'DETERIORATING' ? '▲▲' : p.trajectory === 'WORSENING' ? '▲' : '→', cls: p.alert_level === 'CRITICAL' ? 'chip-red' : p.alert_level === 'WARNING' ? 'chip-amber' : 'chip-green' },
+      alertOrder: alertOrder[p.alert_level] ?? 3
+    }));
+    rows.sort((a, b) => {
+      if (a.alertOrder !== b.alertOrder) return a.alertOrder - b.alertOrder;
+      return b.sofa - a.sofa;
+    });
+  } else {
+    // Fallback to local PATIENTS object
+    rows = Object.values(PATIENTS).map(pt => {
+      const sofa = calcSOFA(pt).total;
+      const news2 = calcNEWS2(pt).total;
+      const lactate = pt.labs.lactate?.[pt.labs.lactate.length - 1]?.v ?? '—';
+      const creatinine = pt.labs.creatinine?.[pt.labs.creatinine.length - 1]?.v ?? '—';
+      const status = patientStatus(pt, sofa, news2, typeof lactate === 'number' ? lactate : 0);
+      const traj = trajectoryFromLabs(pt);
+      return { id: pt.id, name: pt.name, sofa, news2, lactate, creatinine, status, traj, alertOrder: status === 'CRITICAL' ? 0 : status === 'SERIOUS' ? 1 : 3 };
+    });
+    rows.sort((a, b) => {
+      if (a.alertOrder !== b.alertOrder) return a.alertOrder - b.alertOrder;
+      return b.sofa - a.sofa;
+    });
+  }
 
   const sortArrow = col => (wardSort.key === col ? (wardSort.dir === 'asc' ? '↑' : '↓') : '');
   const table = document.getElementById('wardTable');
@@ -2032,22 +2178,23 @@ function renderWardBoard() {
         <th onclick="sortWardBy('id')">PATIENT ID ${sortArrow('id')}</th>
         <th onclick="sortWardBy('name')">NAME ${sortArrow('name')}</th>
         <th onclick="sortWardBy('sofa')">SOFA ${sortArrow('sofa')}</th>
-        <th onclick="sortWardBy('news2')">NEWS2 ${sortArrow('news2')}</th>
-        <th onclick="sortWardBy('lactate')">LACTATE ${sortArrow('lactate')}</th>
-        <th onclick="sortWardBy('creatinine')">CREATININE ${sortArrow('creatinine')}</th>
+        <th>NEWS2</th>
+        <th>LACTATE</th>
+        <th>CREATININE</th>
         <th onclick="sortWardBy('status')">STATUS ${sortArrow('status')}</th>
-        <th onclick="sortWardBy('trajectory')">TRAJECTORY</th>
+        <th>TRAJECTORY</th>
         <th>ACTION</th>
       </tr>
     </thead>
     <tbody>
       ${rows.map(r => {
-        const sCls = r.status === 'CRITICAL' ? 'chip-red' : r.status === 'SERIOUS' ? 'chip-amber' : 'chip-green';
+        const sCls = r.status === 'CRITICAL' ? 'chip-red' : r.status === 'SERIOUS' || r.status === 'WARNING' ? 'chip-amber' : 'chip-green';
         const rowCls = r.status === 'CRITICAL' ? 'ward-row critical' : 'ward-row';
+        const sofaCls = r.sofa >= 10 ? 'title-accent-red' : r.sofa >= 6 ? 'title-accent-amber' : '';
         return `<tr class="${rowCls}">
           <td>${r.id}</td>
           <td>${r.name}</td>
-          <td>${r.sofa}</td>
+          <td><span class="${sofaCls}">${r.sofa}</span></td>
           <td>${r.news2}</td>
           <td>${r.lactate}</td>
           <td>${r.creatinine}</td>
@@ -2060,10 +2207,11 @@ function renderWardBoard() {
   `;
 
   const critical = rows.filter(r => r.status === 'CRITICAL').length;
-  const serious = rows.filter(r => r.status === 'SERIOUS').length;
-  const stable = rows.filter(r => r.status === 'MONITOR').length;
-  const avgSofa = (rows.reduce((s, r) => s + r.sofa, 0) / rows.length).toFixed(1);
-  const highest = rows.slice().sort((a, b) => b.sofa - a.sofa)[0]?.id || 'NA';
+  const serious = rows.filter(r => r.status === 'SERIOUS' || r.status === 'WARNING').length;
+  const stable = rows.filter(r => r.status === 'MONITOR' || r.status === 'NORMAL').length;
+  const sofaSum = rows.reduce((s, r) => s + (typeof r.sofa === 'number' ? r.sofa : 0), 0);
+  const avgSofa = rows.length ? (sofaSum / rows.length).toFixed(1) : '0';
+  const highest = rows[0]?.id || 'NA';
 
   document.getElementById('wardSummary').textContent =
     `WARD SUMMARY: ${critical} CRITICAL · ${serious} SERIOUS · ${stable} STABLE | Avg SOFA: ${avgSofa} | Highest risk: ${highest}`;
@@ -2081,22 +2229,24 @@ function sortWardBy(key) {
   renderWardBoard();
 }
 
-function analyzeFromWard(id) {
+async function analyzeFromWard(id) {
   switchView('patient');
   const sel = document.getElementById('patientSelect');
-  sel.value = id;
-  loadPatient(id);
+  if (sel) sel.value = id;
+  await loadPatient(id);
   setTimeout(() => runFullDiagnostics(), 300);
 }
 
-function selectPatient(idx) {
-  const ids = Object.keys(PATIENTS);
+async function selectPatient(idx) {
+  const ids = allPatientsCache.length
+    ? allPatientsCache.map(p => p.fhir_id)
+    : Object.keys(PATIENTS);
   const id = ids[idx];
   if (!id) return;
   switchView('patient');
   const sel = document.getElementById('patientSelect');
-  sel.value = id;
-  loadPatient(id);
+  if (sel) sel.value = id;
+  await loadPatient(id);
 }
 
 function linearRegressionSlope(values) {
@@ -2131,7 +2281,9 @@ function renderVelocityPanel(pt, projections) {
     { key: 'creatinine', label: 'Creatinine', unit: 'mg/dL/h' }
   ];
   const rows = labs.map(l => {
-    const vals = pt.labs[l.key].map(x => x.v);
+    const arr = pt.labs[l.key];
+    if (!Array.isArray(arr) || arr.length < 2) return '';
+    const vals = arr.map(x => x.v);
     const v = calcVelocity(vals, 0);
     let badge = 'STABLE →';
     let cls = 'velocity-stable';
@@ -2144,9 +2296,12 @@ function renderVelocityPanel(pt, projections) {
   const l6 = projections.lactate6h;
   const c6 = projections.creatinine6h;
   const w6 = projections.wbc6h;
-  const severity = l6 > 4 || c6 > 3 || w6 > 20 ? 'CRITICAL' : (l6 > 2.5 || c6 > 2.0 || w6 > 15 ? 'WARNING' : 'NORMAL');
+  const safeL6 = isFinite(l6) ? l6 : 0;
+  const safeC6 = isFinite(c6) ? c6 : 0;
+  const safeW6 = isFinite(w6) ? w6 : 0;
+  const severity = safeL6 > 4 || safeC6 > 3 || safeW6 > 20 ? 'CRITICAL' : (safeL6 > 2.5 || safeC6 > 2.0 || safeW6 > 15 ? 'WARNING' : 'NORMAL');
 
-  panel.innerHTML = `<div class="velocity-title">TREND VELOCITY</div>${rows}<div class="velocity-projection">⚡ Projected T+6h: Lactate ~${l6.toFixed(1)} mmol/L [${severity}]</div>`;
+  panel.innerHTML = `<div class="velocity-title">TREND VELOCITY</div>${rows.filter(Boolean).join('')}<div class="velocity-projection">⚡ Projected T+6h: Lactate ~${safeL6.toFixed(1)} mmol/L [${severity}]</div>`;
 }
 
 function matchMIMICPattern(sofa, lactate, creatinine, creatRatio) {
@@ -2184,10 +2339,11 @@ function getDataDecay(hoursAgo, baseConfidence) {
 }
 
 function getFlagEvidence(flag, pt, sofa) {
+  const getL = (key, def) => { const a = pt.labs[key]; return (Array.isArray(a) && a.length) ? a[a.length-1].v : def; };
   const latest = {
-    lactate: pt.labs.lactate[pt.labs.lactate.length - 1].v,
-    wbc: pt.labs.wbc[pt.labs.wbc.length - 1].v,
-    creat: pt.labs.creatinine[pt.labs.creatinine.length - 1].v,
+    lactate: getL('lactate', 1.0),
+    wbc: getL('wbc', 8.0),
+    creat: getL('creatinine', 1.0),
     map: pt.vitals.map,
     sbp: pt.vitals.bpSys,
     temp: pt.vitals.temp,
@@ -2317,7 +2473,7 @@ async function toggleDevilMode() {
   try {
     const text = await callClaude(
       "You are a clinical devil's advocate AI. Your job is to argue AGAINST the primary diagnosis in a rigorous, intellectually honest way. You are NOT saying the diagnosis is wrong — you are identifying the strongest counter-evidence a skeptical clinician would raise. Format exactly as: PRIMARY CHALLENGE: [1-2 sentences challenging the main diagnosis] ALTERNATIVE EXPLANATIONS: [2-3 numbered alternatives] MISSING EVIDENCE: [what data would strengthen or refute the diagnosis] RECOMMENDATION: [balanced 1-sentence recommendation] Plain text only. No markdown.",
-      `Primary diagnosis: ${topRisk}. Patient ${pt.id}, SOFA ${lastAnalysisContext.sofa.total}, NEWS2 ${lastAnalysisContext.news2.total}. Key evidence FOR diagnosis: Lactate ${l.lactate.map(x=>x.v).join('→')}, WBC ${l.wbc.map(x=>x.v).join('→')}, Creatinine ${l.creatinine.map(x=>x.v).join('→')}. Flagged meds: ${pt.medications.join(', ')}. Notes summary: ${(lastAnalysisContext.noteConcerns || []).join('; ')}. Generate the strongest possible counter-argument.`,
+      `Primary diagnosis: ${topRisk}. Patient ${pt.id}, SOFA ${lastAnalysisContext.sofa.total}, NEWS2 ${lastAnalysisContext.news2.total}. Key evidence FOR diagnosis: Lactate ${Array.isArray(l.lactate)?l.lactate.map(x=>x.v).join('→'):'N/A'}, WBC ${Array.isArray(l.wbc)?l.wbc.map(x=>x.v).join('→'):'N/A'}, Creatinine ${Array.isArray(l.creatinine)?l.creatinine.map(x=>x.v).join('→'):'N/A'}. Flagged meds: ${pt.medications.join(', ')}. Notes summary: ${(lastAnalysisContext.noteConcerns || []).join('; ')}. Generate the strongest possible counter-argument.`,
       400
     );
     panel.innerHTML = `<div class="devil-header">⚖ DEVIL'S ADVOCATE — COUNTER-ARGUMENT</div><div class="devil-body">${formatDevilSections(text)}</div>`;
@@ -2411,10 +2567,16 @@ function renderPatternBlock(pattern) {
 
 function deriveRiskFlags(pt, sofa, news2, labFindings) {
   const flags = [];
-  const lactate = pt.labs.lactate[pt.labs.lactate.length - 1].v;
-  const creat = pt.labs.creatinine[pt.labs.creatinine.length - 1].v;
-  const creatRatio = creat / pt.labs.creatinine[0].v;
-  const wbc = pt.labs.wbc[pt.labs.wbc.length - 1].v;
+  const getLatestVal = (key, def) => {
+    const arr = pt.labs[key];
+    if (Array.isArray(arr) && arr.length) return arr[arr.length - 1].v;
+    return def;
+  };
+  const lactate = getLatestVal('lactate', 1.0);
+  const creat = getLatestVal('creatinine', 1.0);
+  const creatArr = pt.labs.creatinine;
+  const creatRatio = (Array.isArray(creatArr) && creatArr.length >= 2) ? creat / creatArr[0].v : 1.0;
+  const wbc = getLatestVal('wbc', 8.0);
 
   if (lactate >= 4 || (pt.vitals.map < 65 && sofa.total >= 8)) {
     flags.push({ key: 'septic_shock', severity: 'high', confidence: 92, evidence: `MAP ${pt.vitals.map}, lactate ${lactate}, SOFA ${sofa.total}`, action: 'Immediate vasopressor optimization and repeat perfusion labs within 1h.', citation: 'Surviving Sepsis Campaign 2021 - Septic Shock' });
@@ -2425,9 +2587,11 @@ function deriveRiskFlags(pt, sofa, news2, labFindings) {
   if (creatRatio >= 1.5 || creat >= 2.0) {
     flags.push({ key: 'aki', severity: creatRatio >= 2 ? 'high' : 'medium', confidence: 82, evidence: `Creatinine ratio ${creatRatio.toFixed(2)}x baseline`, action: 'Review nephrotoxins, optimize renal perfusion, and monitor urine output.', citation: 'KDIGO AKI Guidelines 2012/2024' });
   }
-  const pf = pt.labs.pao2 / pt.vitals.fio2;
+  const pao2val = typeof pt.labs.pao2 === 'number' ? pt.labs.pao2 : (typeof pt.vitals.pao2 === 'number' ? pt.vitals.pao2 : 75);
+  const fio2val = pt.vitals.fio2 || 0.21;
+  const pf = pao2val / fio2val;
   if (pf < 300) {
-    flags.push({ key: 'ards', severity: pf < 200 ? 'high' : 'medium', confidence: 76, evidence: `P/F ratio ${pf.toFixed(0)} on FiO2 ${pt.vitals.fio2}`, action: 'Apply lung-protective ventilation and reassess gas exchange trajectory.', citation: 'Berlin ARDS Definition 2012' });
+    flags.push({ key: 'ards', severity: pf < 200 ? 'high' : 'medium', confidence: 76, evidence: `P/F ratio ${pf.toFixed(0)} on FiO2 ${fio2val}`, action: 'Apply lung-protective ventilation and reassess gas exchange trajectory.', citation: 'Berlin ARDS Definition 2012' });
   }
   if (!flags.length && labFindings.length) {
     flags.push({ key: 'monitor', severity: 'low', confidence: 64, evidence: labFindings.map(f => f.message).join('; '), action: 'Continue close ICU trend monitoring and repeat labs per protocol.', citation: 'SOFA / ICU trend monitoring' });
@@ -2444,9 +2608,11 @@ function renderRiskReport(pt, analysis) {
   const riskKeys = riskFlags.map(f => f.key);
   const showTimer = riskKeys.includes('sepsis') || riskKeys.includes('septic_shock');
 
-  const lactate = pt.labs.lactate[pt.labs.lactate.length - 1].v;
-  const creat = pt.labs.creatinine[pt.labs.creatinine.length - 1].v;
-  const creatRatio = creat / pt.labs.creatinine[0].v;
+  const _lactArr = pt.labs.lactate;
+  const _creatArr = pt.labs.creatinine;
+  const lactate = (Array.isArray(_lactArr) && _lactArr.length) ? _lactArr[_lactArr.length - 1].v : 1.0;
+  const creat = (Array.isArray(_creatArr) && _creatArr.length) ? _creatArr[_creatArr.length - 1].v : 1.0;
+  const creatRatio = (Array.isArray(_creatArr) && _creatArr.length >= 2) ? creat / _creatArr[0].v : 1.0;
   const pattern = matchMIMICPattern(sofa.total, lactate, creat, creatRatio);
 
   let html = '';
@@ -2726,12 +2892,13 @@ function calcSOFA(pt) {
   const v = pt.vitals;
   const labs = pt.labs;
 
-  const getLatest = (arr) => arr[arr.length - 1].v;
+  const getLatest = (arr) => Array.isArray(arr) && arr.length ? arr[arr.length - 1].v : null;
 
-  const pf = v.pao2 / v.fio2; // PaO2/FiO2 ratio
-  const plts = getLatest(labs.platelets);
-  const bili = getLatest(labs.bilirubin);
-  const creat = getLatest(labs.creatinine);
+  const pao2 = typeof v.pao2 === 'number' ? v.pao2 : (typeof labs.pao2 === 'number' ? labs.pao2 : 75);
+  const pf = pao2 / (v.fio2 || 0.21); // PaO2/FiO2 ratio
+  const plts = getLatest(labs.platelets) ?? 200;
+  const bili = getLatest(labs.bilirubin) ?? 0.8;
+  const creat = getLatest(labs.creatinine) ?? 1.0;
 
   // Respiratory
   let resp = 0;
@@ -2928,9 +3095,9 @@ function retrieveGuidelinesKeyword(context) {
 // ══════════════════════════════════════════════════
 function renderPatientCard(pt) {
   document.getElementById('ptName').textContent = pt.name;
-  document.getElementById('ptMeta').textContent = `${pt.age}${pt.sex} · ${pt.daysInICU.toFixed(1)} days ICU · Adm: ${pt.admitDiag}`;
+  document.getElementById('ptMeta').textContent = `${pt.age}${pt.sex} · ${(pt.daysInICU||0).toFixed(1)} days ICU · Adm: ${pt.admitDiag}`;
   const badge = document.getElementById('ptBadge');
-  badge.innerHTML = `<span class="patient-badge badge-red">${pt.admitDiag.split(' ')[0].toUpperCase()}</span>`;
+  badge.innerHTML = `<span class="patient-badge badge-red">${(pt.admitDiag||'ICU').split(' ')[0].toUpperCase()}</span>`;
 }
 
 function renderVitals(pt) {
@@ -3050,13 +3217,28 @@ function renderChart(pt) {
   const ctx = document.getElementById('labChart').getContext('2d');
   if (labChart) labChart.destroy();
 
-  const actualLabels = pt.labs.wbc.map(x => x.t);
+  // Safely get lab arrays — API patients may not have all labs
+  const wbcArr = Array.isArray(pt.labs.wbc) ? pt.labs.wbc : [];
+  const lactArr = Array.isArray(pt.labs.lactate) ? pt.labs.lactate : [];
+  const creatArr = Array.isArray(pt.labs.creatinine) ? pt.labs.creatinine : [];
+
+  // Use longest available array for labels
+  const refArr = wbcArr.length ? wbcArr : lactArr.length ? lactArr : creatArr;
+  if (!refArr.length) {
+    // Nothing to chart
+    document.getElementById('velocityPanel').innerHTML = '<div class="velocity-title">TREND VELOCITY</div><div class="empty-state">No lab timeline data</div>';
+    return;
+  }
+
+  const actualLabels = refArr.map(x => x.t);
   const lastLabel = actualLabels[actualLabels.length - 1] || 'T';
   const labels = [...actualLabels, `${lastLabel}+3h`, `${lastLabel}+6h`];
 
-  const wbcActual = pt.labs.wbc.map(x => x.v);
-  const lactActual = pt.labs.lactate.map(x => x.v);
-  const creatActual = pt.labs.creatinine.map(x => x.v);
+  const padTo = (arr, len) => { while (arr.length < len) arr.push(null); return arr; };
+
+  const wbcActual = wbcArr.length ? wbcArr.map(x => x.v) : padTo([], refArr.length);
+  const lactActual = lactArr.length ? lactArr.map(x => x.v) : padTo([], refArr.length);
+  const creatActual = creatArr.length ? creatArr.map(x => x.v) : padTo([], refArr.length);
   const wbcSlope = linearRegressionSlope(wbcActual);
   const lactSlope = linearRegressionSlope(lactActual);
   const creatSlope = linearRegressionSlope(creatActual);
@@ -3101,17 +3283,17 @@ function renderChart(pt) {
           borderColor: '#ff3355', backgroundColor: 'rgba(255,51,85,0.08)',
           tension: 0.3,
           pointRadius: creatData.map((_, i) => {
-            const out = pt.labs.creatinine[i]?.outlier;
+            const out = creatArr[i]?.outlier;
             if (out) return 8;
             return i >= actualDataLength ? 4 : 4;
           }),
           pointBackgroundColor: creatData.map((_, i) => {
-            const out = pt.labs.creatinine[i]?.outlier;
+            const out = creatArr[i]?.outlier;
             if (out) return '#ff3355';
             return 'rgba(255,51,85,0.8)';
           }),
           pointStyle: creatData.map((_, i) => {
-            const out = pt.labs.creatinine[i]?.outlier;
+            const out = creatArr[i]?.outlier;
             if (out) return 'crossRot';
             return i >= actualDataLength ? 'triangle' : 'circle';
           }),
@@ -3129,7 +3311,7 @@ function renderChart(pt) {
           titleFont: {family:'JetBrains Mono'}, bodyFont: {family:'JetBrains Mono',size:10},
           callbacks: {
             afterLabel: (ctx) => {
-              const isOutlier = pt.labs.creatinine[ctx.dataIndex]?.outlier;
+              const isOutlier = creatArr[ctx.dataIndex]?.outlier;
               return isOutlier ? '⚠ OUTLIER — REDRAW PENDING' : '';
             }
           }
@@ -3202,13 +3384,18 @@ function renderRiskChips(pt, outliers, sofa, news2) {
   if (sofa.total >= 6) chips.push({label:'SEPSIS CRITERIA MET', cls:'chip-red'});
   else if (sofa.total >= 2) chips.push({label:'ORGAN DYSFUNCTION', cls:'chip-amber'});
   if (outliers.length > 0) chips.push({label:'LAB OUTLIER — HOLD', cls:'chip-red'});
-  const lat = pt.labs.lactate[pt.labs.lactate.length-1].v;
-  if (lat >= 2) chips.push({label:`LACTATE ${lat} ↑`, cls:'chip-red'});
+  const lactArr = pt.labs.lactate;
+  if (Array.isArray(lactArr) && lactArr.length) {
+    const lat = lactArr[lactArr.length-1].v;
+    if (lat >= 2) chips.push({label:`LACTATE ${lat} ↑`, cls:'chip-red'});
+  }
   if (news2.total >= 7) chips.push({label:'NEWS2 HIGH RISK', cls:'chip-red'});
   else if (news2.total >= 5) chips.push({label:'NEWS2 MED RISK', cls:'chip-amber'});
   const cr = pt.labs.creatinine;
-  const crRatio = cr[cr.length-1].v / cr[0].v;
-  if (crRatio >= 1.5 && !outliers.some(o=>o.lab==='creatinine')) chips.push({label:'AKI TRAJECTORY', cls:'chip-amber'});
+  if (Array.isArray(cr) && cr.length >= 2) {
+    const crRatio = cr[cr.length-1].v / cr[0].v;
+    if (crRatio >= 1.5 && !outliers.some(o=>o.lab==='creatinine')) chips.push({label:'AKI TRAJECTORY', cls:'chip-amber'});
+  }
 
   document.getElementById('riskChips').innerHTML = chips.map(c =>
     `<div class="risk-chip ${c.cls}">${c.label}</div>`
@@ -3406,8 +3593,8 @@ async function runRAGAgent(pt, labFindings, outliers) {
     ...riskFlags,
     ...pt.medications,
     ...(outliers.length > 0 ? ['acute kidney injury creatinine outlier'] : []),
-    `lactate ${pt.labs.lactate[pt.labs.lactate.length-1].v} mmol/L`,
-    `WBC ${pt.labs.wbc[pt.labs.wbc.length-1].v}`,
+    ...(Array.isArray(pt.labs.lactate) && pt.labs.lactate.length ? [`lactate ${pt.labs.lactate[pt.labs.lactate.length-1].v} mmol/L`] : []),
+    ...(Array.isArray(pt.labs.wbc) && pt.labs.wbc.length ? [`WBC ${pt.labs.wbc[pt.labs.wbc.length-1].v}`] : []),
     `SOFA organ failure sepsis risk assessment`
   ];
   const queryText = queryParts.join('. ');
@@ -3489,7 +3676,7 @@ async function runChiefAgent(pt, parsedNotes, labFindings, guidelines, outliers,
 
   const prompt = `You are the Chief Diagnostic Agent for an ICU Diagnostic Risk Assistant. Synthesize the following patient data and produce a structured clinical assessment.
 
-PATIENT: ${pt.name}, ${pt.age}${pt.sex}, Day ${pt.daysInICU.toFixed(1)} ICU
+PATIENT: ${pt.name}, ${pt.age}${pt.sex}, Day ${(pt.daysInICU||0).toFixed(1)} ICU
 ADMISSION DIAGNOSIS: ${pt.admitDiag}
 
 VITAL SIGNS:
@@ -3639,18 +3826,44 @@ function parseHandover(text, pt) {
     el.textContent = match[1].trim();
   } else {
     // fallback: construct from patient data
-    const lat = pt.labs.creatinine[pt.labs.creatinine.length-1];
-    const lactLat = pt.labs.lactate[pt.labs.lactate.length-1].v;
-    el.textContent = `${pt.name}, ${pt.age}${pt.sex}, Day ${pt.daysInICU.toFixed(1)} in ICU. ${pt.admitDiag}. Lactate ${lactLat} mmol/L${lactLat>=2?' — above threshold':''}. ${lat.outlier?`Creatinine outlier ${lat.v} mg/dL — redraw pending.`:''}`;
+    const _creatArr = pt.labs.creatinine;
+    const _lactArr = pt.labs.lactate;
+    const lat = (Array.isArray(_creatArr) && _creatArr.length) ? _creatArr[_creatArr.length-1] : null;
+    const lactLat = (Array.isArray(_lactArr) && _lactArr.length) ? _lactArr[_lactArr.length-1].v : 1.0;
+    el.textContent = `${pt.name}, ${pt.age}${pt.sex}, Day ${(pt.daysInICU||0).toFixed(1)} in ICU. ${pt.admitDiag}. Lactate ${lactLat} mmol/L${lactLat>=2?' — above threshold':''}. ${lat?.outlier?`Creatinine outlier ${lat.v} mg/dL — redraw pending.`:''}`;
   }
 }
 
 // ══════════════════════════════════════════════════
-// LOAD PATIENT (UI POPULATION)
+// LOAD PATIENT (UI POPULATION) — API-first, fallback to PATIENTS object
 // ══════════════════════════════════════════════════
-function loadPatient(id) {
-  currentPatient = PATIENTS[id];
-  const pt = currentPatient;
+async function loadPatient(id) {
+  if (!id) return;
+
+  // Try API first
+  let pt = null;
+  if (backendOnline) {
+    try {
+      const r = await fetch(`${CONFIG.BACKEND_HTTP}/api/fhir-local/patient/${id}`, { signal: AbortSignal.timeout(4000) });
+      if (r.ok) {
+        const d = await r.json();
+        pt = adaptApiPatient(d.patient || d);
+      }
+    } catch (e) {
+      logAgent('HC01', `API patient load failed (${e.message}), falling back to local`, 'warn');
+    }
+  }
+
+  // Fallback to local PATIENTS object
+  if (!pt) {
+    pt = PATIENTS[id] || PATIENTS['P001'];
+    if (!pt) {
+      logAgent('HC01', `Patient ${id} not found`, 'error');
+      return;
+    }
+  }
+
+  currentPatient = pt;
 
   // Clear previous results
   resetOutputs();
@@ -3681,6 +3894,9 @@ function loadPatient(id) {
   renderSOFA(pt);
   renderNEWS2(pt);
 
+  // Update priority card
+  updatePriorityCard(sofa.total, news2, null);
+
   // Detect outliers
   const outliers = detectOutliers(pt.labs);
   renderOutlierAlert(outliers, pt);
@@ -3696,15 +3912,53 @@ function loadPatient(id) {
   document.getElementById('riskBadge').style.display = 'block';
 }
 
+// Adapt PatientData from API format to internal format
+function adaptApiPatient(apiPt) {
+  const labs = {};
+  // Labs from API: { labname: [{t, v, outlier?}] }
+  if (apiPt.labs && typeof apiPt.labs === 'object') {
+    for (const [k, v] of Object.entries(apiPt.labs)) {
+      if (Array.isArray(v)) { labs[k] = v; }
+      else if (typeof v === 'number') { labs[k] = v; } // e.g. pao2 scalar
+    }
+  }
+  const vitals = { ...(apiPt.vitals || {}) };
+  // Ensure pao2 present for P/F calculation
+  if (!vitals.pao2 && typeof labs.pao2 === 'number') { vitals.pao2 = labs.pao2; }
+  if (!vitals.pao2) vitals.pao2 = 75;
+  if (!vitals.fio2) vitals.fio2 = 0.21;
+
+  // Build refs — merge default with anything provided
+  const refs = { ...DEFAULT_LAB_REFS };
+
+  return {
+    id: apiPt.id || apiPt.fhir_id,
+    name: apiPt.name,
+    age: apiPt.age,
+    sex: apiPt.sex,
+    weight: apiPt.weight || 70,
+    daysInICU: apiPt.daysInICU || 0,
+    lastLabHoursAgo: apiPt.lastLabHoursAgo || 4,
+    admitDiag: apiPt.admitDiag || apiPt.case_type || 'ICU Patient',
+    vitals,
+    labs,
+    refs,
+    medications: apiPt.medications || [],
+    notes: apiPt.notes || [],
+    parsedFindings: null,
+  };
+}
+
 // ══════════════════════════════════════════════════
 // RUN FULL DIAGNOSTICS
 // Routes: Backend WS (server.py) → Standalone fallback
 // ══════════════════════════════════════════════════
 async function runFullDiagnostics() {
-  if (!currentPatient) loadPatient(document.getElementById('patientSelect').value);
+  if (!currentPatient) await loadPatient(document.getElementById('patientSelect').value);
   const apiKey = document.getElementById('apiKey').value.trim();
-  if (!apiKey) {
-    alert('Please enter your NVIDIA NIM API key.');
+  // Only require API key in standalone mode (backend has NIM configured via .env)
+  if (!apiKey && !backendOnline) {
+    alert('Please enter your NVIDIA NIM API key (or ensure backend is running).');
     return;
   }
   const btn = document.getElementById('runBtn');
@@ -3717,7 +3971,7 @@ async function runFullDiagnostics() {
   // Reset orchestrator UI
   ['CLINICAL','SAFETY','TEMPORAL','EVIDENCE','SYNTHESIS'].forEach(o => setOrchStatus(o, ''));
   ['NOTE_PARSER','DATA_EXTRACTOR','OUTLIER_DETECTOR','MED_SAFETY','ALERT_ESCALATION',
-   'TREND_CLASSIFIER','TRAJECTORY_PREDICTOR','SEMANTIC_RETRIEVER','RAG_EXPLAINER',
+   'TREND_CLASSIFIER','TRAJECTORY_PREDICTOR','TEMPORAL_LAB_MAPPER','SEMANTIC_RETRIEVER','RAG_EXPLAINER',
    'SOFA_NEWS2','CHIEF_AGENT'].forEach(a => setAgentDot(a, ''));
 
   const pt = currentPatient;
@@ -3830,7 +4084,7 @@ function resetOutputs() {
   document.getElementById('handoverBrief').textContent = 'Awaiting synthesis...';
   document.getElementById('outlierAlert').classList.remove('visible');
   document.getElementById('agentLog').innerHTML = '';
-  [1,2,3,4].forEach(n => setPipe(n, ''));
+  [1,2,3,4,5,6].forEach(n => setPipe(n, ''));
 }
 
 function resetUI() {
@@ -3891,25 +4145,260 @@ function resetAll() {
 // INIT
 // ══════════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', async () => {
-  loadPatient('P001');
-
-  // 1. Check backend first (server.py on RTX 2070 system)
+  // 1. Check backend first
   await checkBackend();
 
-  // 2. If no backend, check Ollama standalone + pre-embed guidelines
-  if (!backendOnline) {
-    await checkOllamaAndPreEmbed();
+  // 2. Populate patient dropdown from API
+  await populatePatientDropdown();
+
+  // 3. Load default patient (hc01-patient-001 or P001 fallback)
+  const defaultId = allPatientsCache.length ? (allPatientsCache[0]?.fhir_id || 'hc01-patient-001') : 'P001';
+  const sel = document.getElementById('patientSelect');
+  if (sel && sel.value) {
+    await loadPatient(sel.value);
+  } else {
+    await loadPatient(defaultId);
   }
 
-  // Update pipeline bar labels
-  const p1 = document.getElementById('pipe1-model');
-  const p3 = document.getElementById('pipe3-model');
-  if (p1) p1.textContent = backendOnline ? 'qwen2.5:7b · BACKEND' : (MODEL_STATUS.ollamaOnline ? 'qwen2.5:7b · LOCAL' : 'qwen2.5-7b · NIM');
-  if (p3) p3.textContent = 'ChromaDB API · fallback mini-KB';
+  // 4. If no backend, check Ollama standalone
+  if (!backendOnline) {
+    await checkOllamaAndPreEmbed();
+    const p1 = document.getElementById('pipe1-model');
+    const p3 = document.getElementById('pipe3-model');
+    if (p1) p1.textContent = MODEL_STATUS.ollamaOnline ? 'qwen3:4b · LOCAL' : 'qwen2.5-7b · NIM';
+    if (p3) p3.textContent = 'ChromaDB API · fallback mini-KB';
+  }
 
-  // Show MIMIC-IV mortality context in SOFA panel
+  // Show MIMIC-IV mortality context
   logAgent('HC01', `Dataset context loaded: MIMIC-IV (${MIMIC_IV.icu_stays.toLocaleString()} ICU stays), eICU-CRD (${EICU.encounters.toLocaleString()} encounters), PhysioNet Sepsis AUROC=${PHYSIONET_SEPSIS.top_auroc}`, 'info');
 });
+
+// ══════════════════════════════════════════════════
+// POPULATE PATIENT DROPDOWN FROM API
+// ══════════════════════════════════════════════════
+async function populatePatientDropdown() {
+  const sel = document.getElementById('patientSelect');
+  if (!sel) return;
+
+  const demoIds = ['hc01-patient-001', 'hc01-patient-002', 'hc01-patient-003'];
+
+  try {
+    const r = await fetch(`${CONFIG.BACKEND_HTTP}/api/fhir-local/patients`, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const patients = await r.json();
+    allPatientsCache = patients;
+
+    const demos = patients.filter(p => demoIds.includes(p.fhir_id));
+    const rest = patients.filter(p => !demoIds.includes(p.fhir_id));
+
+    sel.innerHTML = '';
+
+    // Demo patients first
+    if (demos.length) {
+      const grpDemo = document.createElement('optgroup');
+      grpDemo.label = '── DEMO PATIENTS ──';
+      demos.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.fhir_id;
+        opt.textContent = `${p.fhir_id} — ${p.name}, ${p.age}${p.sex} — ${p.admitDiag || p.case_type || ''}`;
+        grpDemo.appendChild(opt);
+      });
+      sel.appendChild(grpDemo);
+    }
+
+    // Separator + rest
+    if (rest.length) {
+      const grpRest = document.createElement('optgroup');
+      grpRest.label = `── ALL PATIENTS (${rest.length}) ──`;
+      rest.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.fhir_id;
+        opt.textContent = `${p.fhir_id} — ${p.name}, ${p.age}${p.sex} — ${p.admitDiag || p.case_type || ''}`;
+        grpRest.appendChild(opt);
+      });
+      sel.appendChild(grpRest);
+    }
+
+    // Select first demo patient
+    if (demos.length) sel.value = demos[0].fhir_id;
+    logAgent('HC01', `Loaded ${patients.length} patients from API (${demos.length} demo)`, 'success');
+  } catch (e) {
+    // Fallback to hardcoded patients
+    logAgent('HC01', `API patient list unavailable (${e.message}) — using local fallback`, 'warn');
+    sel.innerHTML = `
+      <option value="P001">P001 — Chen Wei, 67M — Suspected Sepsis</option>
+      <option value="P002">P002 — Rodriguez M., 54F — Post-op ARDS</option>
+      <option value="P003">P003 — Okafor K., 72M — AKI Monitoring</option>
+    `;
+  }
+}
+
+// ══════════════════════════════════════════════════
+// RENDER DISEASE TIMELINE (TEMPORAL_LAB_MAPPER)
+// ══════════════════════════════════════════════════
+function renderDiseaseTimeline(timelineStr) {
+  const el = document.getElementById('diseaseTimeline');
+  if (!timelineStr || !timelineStr.trim()) {
+    el.innerHTML = '<div class="empty-state">No timeline events available</div>';
+    return;
+  }
+  const lines = timelineStr.split('\n').filter(l => l.trim());
+  const html = lines.map(line => {
+    // Expected format: "T+2h | CREATININE: 4.2 mg/dL [CRITICAL] ..."
+    // or free-form text
+    const pipeIdx = line.indexOf('|');
+    let timeStr = '', rest = line;
+    if (pipeIdx !== -1) {
+      timeStr = line.substring(0, pipeIdx).trim();
+      rest = line.substring(pipeIdx + 1).trim();
+    }
+    // Detect flag
+    let flagCls = '';
+    let flagLabel = '';
+    if (rest.includes('[CRITICAL]') || rest.includes('CRITICAL')) { flagCls = 'flag-CRITICAL'; flagLabel = 'CRITICAL'; }
+    else if (rest.includes('[ABNORMAL]') || rest.includes('ABNORMAL') || rest.includes('[HIGH]') || rest.includes('[LOW]')) { flagCls = 'flag-ABNORMAL'; flagLabel = 'ABNORMAL'; }
+    else if (rest.includes('[NORMAL]') || rest.includes('NORMAL')) { flagCls = 'flag-NORMAL'; flagLabel = 'NORMAL'; }
+    const cleanRest = rest.replace(/\[(CRITICAL|ABNORMAL|NORMAL|HIGH|LOW)\]/g, '').trim();
+    return `<div class="timeline-event">
+      <div class="timeline-time">${timeStr || '—'}</div>
+      ${flagLabel ? `<div class="timeline-flag ${flagCls}">${flagLabel}</div>` : '<div class="timeline-flag"></div>'}
+      <div style="color:var(--text2)">${cleanRest}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML = html || '<div class="empty-state">No parseable events</div>';
+  // Auto-switch to timeline tab
+  switchTab('timeline');
+}
+
+// ══════════════════════════════════════════════════
+// PRIORITY SCORE CARD UPDATE
+// ══════════════════════════════════════════════════
+function updatePriorityCard(sofaTotal, news2Obj, alertLevelOverride) {
+  const numEl = document.getElementById('prioritySofaNum');
+  const badgeEl = document.getElementById('priorityBadge');
+  const mortEl = document.getElementById('priorityMortality');
+  const n2El = document.getElementById('priorityNews2');
+  if (!numEl) return;
+
+  const sofa = typeof sofaTotal === 'number' ? sofaTotal : 0;
+  numEl.textContent = sofa;
+
+  // Determine priority level
+  let level, color, borderColor;
+  if (alertLevelOverride === 'CRITICAL' || sofa >= 10) {
+    level = 'CRITICAL'; color = 'var(--red)'; borderColor = 'rgba(255,51,85,0.4)';
+  } else if (alertLevelOverride === 'WARNING' || sofa >= 6) {
+    level = 'URGENT'; color = 'var(--amber)'; borderColor = 'rgba(255,170,0,0.4)';
+  } else {
+    level = 'MONITOR'; color = 'var(--green)'; borderColor = 'rgba(0,255,136,0.3)';
+  }
+
+  numEl.style.color = color;
+  badgeEl.textContent = level;
+  badgeEl.style.color = color;
+  badgeEl.style.borderColor = borderColor;
+
+  // Mortality from MIMIC-IV table
+  const mortality = MIMIC_IV.sofa_mortality[Math.min(sofa, 15)] || 0;
+  const mortCls = mortality >= 40 ? 'mortality-high' : mortality >= 20 ? 'mortality-medium' : 'mortality-low';
+  mortEl.innerHTML = `Predicted mortality: <span class="${mortCls}">${mortality}%</span> <span style="color:var(--text3)">(MIMIC-IV)</span>`;
+
+  if (news2Obj) {
+    n2El.textContent = `NEWS2: ${news2Obj.total} · ${news2Obj.level || ''}`;
+  }
+}
+
+// ══════════════════════════════════════════════════
+// DATA INGESTION: VOICE STT + NOTE INJECT
+// ══════════════════════════════════════════════════
+function toggleIngestionMode(mode) {
+  const voicePanel = document.getElementById('ingestionVoicePanel');
+  const notePanel = document.getElementById('ingestionNotePanel');
+  if (mode === 'voice') {
+    const isVis = voicePanel.style.display !== 'none';
+    voicePanel.style.display = isVis ? 'none' : 'block';
+    notePanel.style.display = 'none';
+  } else {
+    const isVis = notePanel.style.display !== 'none';
+    notePanel.style.display = isVis ? 'none' : 'block';
+    voicePanel.style.display = 'none';
+  }
+}
+
+async function toggleMicRecording() {
+  const btn = document.getElementById('micBtn');
+  const status = document.getElementById('micStatus');
+  const result = document.getElementById('sttResult');
+
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    // Stop recording
+    mediaRecorder.stop();
+    btn.innerHTML = '&#9679; START RECORDING';
+    btn.style.color = '';
+    status.textContent = 'Processing...';
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const b64 = reader.result.split(',')[1];
+        status.textContent = 'Sending to STT backend...';
+        try {
+          const r = await fetch(`${CONFIG.BACKEND_HTTP}/api/notes/speech`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio_b64: b64 }),
+            signal: AbortSignal.timeout(15000)
+          });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const d = await r.json();
+          const transcript = d.transcript || '';
+          result.textContent = `Transcript: ${transcript}`;
+          status.textContent = 'Transcription complete.';
+          if (transcript && currentPatient) {
+            injectNoteText(transcript, 'Voice STT');
+          }
+        } catch (e) {
+          status.textContent = `STT error: ${e.message}`;
+        }
+      };
+      reader.readAsDataURL(blob);
+    };
+    mediaRecorder.start();
+    btn.innerHTML = '&#9632; STOP RECORDING';
+    btn.style.color = 'var(--red)';
+    status.textContent = 'Recording...';
+  } catch (e) {
+    status.textContent = `Mic error: ${e.message}`;
+  }
+}
+
+function injectNote() {
+  const textarea = document.getElementById('injectNoteText');
+  const statusEl = document.getElementById('injectStatus');
+  const text = textarea.value.trim();
+  if (!text) { statusEl.textContent = 'Enter a note first.'; return; }
+  injectNoteText(text, 'Manual Inject');
+  textarea.value = '';
+  statusEl.textContent = 'Note injected.';
+  setTimeout(() => { statusEl.textContent = ''; }, 3000);
+}
+
+function injectNoteText(text, author) {
+  if (!currentPatient) return;
+  const time = new Date().toLocaleTimeString();
+  currentPatient.notes.push({ time, author: author || 'Data Injection', text });
+  renderNotes(currentPatient);
+  logAgent('HC01', `Note injected (${author}): ${text.slice(0, 60)}...`, 'success');
+}
 </script>
 </body>
 </html>
