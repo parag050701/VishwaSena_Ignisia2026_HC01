@@ -1,5 +1,8 @@
+"""Multi-agent clinical orchestration pipeline for HC01."""
+
 import asyncio
 import json
+import logging
 import math
 import re
 import time
@@ -11,461 +14,863 @@ from .config import cfg
 from .models import AgentContext
 from .scoring import calc_news2, calc_sofa, cosine_sim, keyword_score
 
+log = logging.getLogger("HC01.agents")
 
-async def agent_note_parser(ctx: AgentContext):
-    orch = "CLINICAL"
-    await ctx.set_agent_status(orch, "NOTE_PARSER", "active")
-    notes_text = "\n\n".join(f"[{n['time']}] {n['author']}: {n['text']}" for n in ctx.patient.notes)
-    sys_prompt = (
-        "You are a clinical NLP agent. Parse ICU notes and return ONLY a JSON object: "
-        "{symptoms:[], medications_mentioned:[], timeline_events:[{time,event}], "
-        "vital_concerns:[], active_problems:[], infection_sources:[]}. No preamble."
-    )
-    messages = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": f"Parse:\n\n{notes_text}"}]
-    raw = ""
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def _latest_lab(labs: Dict, key: str) -> float:
+    arr = labs.get(key, [])
+    if not arr:
+        return 0.0
+    entry = arr[-1]
+    return float(entry["v"] if isinstance(entry, dict) else entry)
+
+
+async def _ollama_or_nim(ctx: AgentContext, messages: List[Dict], max_tokens: int = 700) -> str:
+    """Try Ollama first; fall back to NIM fallback model if Ollama is unavailable."""
     try:
         if await ollama.is_online():
-            await ctx.log("NOTE_PARSER", f"Calling {cfg.NOTE_MODEL} LOCAL (Ollama)...")
-            raw = await ollama.chat(cfg.NOTE_MODEL, messages, max_tokens=700)
-        else:
-            raise RuntimeError("Ollama offline")
-    except Exception as e:
-        await ctx.log("NOTE_PARSER", f"Ollama failed ({e}), falling back to NIM...", "warn")
+            return await ollama.chat(cfg.NOTE_MODEL, messages, max_tokens=max_tokens)
+        raise RuntimeError("Ollama offline")
+    except Exception as e_oll:
+        key = ctx.nim_key or cfg.nim_key("fallback")
+        if not key:
+            return f"[Local model unavailable, no NIM key configured: {e_oll}]"
         try:
-            raw = await nim.chat(cfg.FALLBACK_MODEL, messages, ctx.nim_key, max_tokens=600)
-        except Exception as e2:
-            await ctx.log("NOTE_PARSER", f"NIM also failed: {e2}", "error")
+            return await nim.chat(cfg.FALLBACK_MODEL, messages, key, max_tokens=max_tokens)
+        except Exception as e_nim:
+            return f"[Both models failed. Ollama: {e_oll} | NIM: {e_nim}]"
 
-    m = re.search(r'\{[\s\S]*\}', raw)
-    if m:
-        try:
-            ctx.parsed_notes = json.loads(m.group())
-            problems = len(ctx.parsed_notes.get("active_problems", []))
-            symptoms = len(ctx.parsed_notes.get("symptoms", []))
-            await ctx.log("NOTE_PARSER", f"Extracted {symptoms} symptoms, {problems} active problems", "info")
-        except Exception:
+
+# ─── Wave 1 agents ────────────────────────────────────────────────────────────
+
+async def agent_note_parser(ctx: AgentContext) -> None:
+    orch = "CLINICAL"
+    await ctx.set_agent_status(orch, "NOTE_PARSER", "active")
+    try:
+        notes_text = "\n\n".join(
+            f"[{n.get('time', '?')}] {n.get('author', '?')}: {n.get('text', '')}"
+            for n in (ctx.patient.notes or [])
+        )
+        if not notes_text.strip():
+            ctx.parsed_notes = {"raw": "No clinical notes available"}
+            await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "NOTE_PARSER", "data": ctx.parsed_notes})
+            await ctx.set_agent_status(orch, "NOTE_PARSER", "done")
+            return
+
+        sys_prompt = (
+            "You are a clinical NLP agent. Parse ICU notes and return ONLY a JSON object: "
+            '{"symptoms":[],"medications_mentioned":[],"timeline_events":[{"time":"","event":""}],'
+            '"vital_concerns":[],"active_problems":[],"infection_sources":[]}. No preamble.'
+        )
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": f"Parse:\n\n{notes_text[:2000]}"},
+        ]
+        raw = await _ollama_or_nim(ctx, messages, max_tokens=700)
+
+        m = re.search(r'\{[\s\S]*\}', raw)
+        if m:
+            try:
+                ctx.parsed_notes = json.loads(m.group())
+                problems  = len(ctx.parsed_notes.get("active_problems", []))
+                symptoms  = len(ctx.parsed_notes.get("symptoms", []))
+                await ctx.log("NOTE_PARSER", f"Extracted {symptoms} symptoms, {problems} active problems", "info")
+            except json.JSONDecodeError:
+                ctx.parsed_notes = {"raw": raw[:800]}
+        else:
             ctx.parsed_notes = {"raw": raw[:800]}
-    else:
-        ctx.parsed_notes = {"raw": raw[:800]}
+
+    except Exception as exc:
+        log.exception("NOTE_PARSER error")
+        ctx.parsed_notes = {"error": str(exc)}
 
     await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "NOTE_PARSER", "data": ctx.parsed_notes})
     await ctx.set_agent_status(orch, "NOTE_PARSER", "done")
 
 
-async def agent_outlier_detector(ctx: AgentContext):
+async def agent_outlier_detector(ctx: AgentContext) -> None:
     orch = "SAFETY"
     await ctx.set_agent_status(orch, "OUTLIER_DETECTOR", "active")
-    labs = ctx.patient.labs
-    outliers = []
-    for name, arr in labs.items():
-        if not isinstance(arr, list) or len(arr) < 3:
-            continue
-        vals = [x["v"] for x in arr]
-        history, latest_v = vals[:-1], vals[-1]
-        mean = sum(history) / len(history)
-        std = math.sqrt(sum((x - mean) ** 2 for x in history) / len(history))
-        if std == 0:
-            continue
-        z = abs((latest_v - mean) / std)
-        if z > cfg.OUTLIER_Z:
-            outliers.append({
-                "lab": name,
-                "value": latest_v,
-                "mean": round(mean, 2),
-                "std": round(std, 2),
-                "z": round(z, 2),
-                "timepoint": arr[-1]["t"],
-                "action": "HOLD DIAGNOSIS — Recommend confirmed redraw",
-            })
-    ctx.outliers = outliers
-    if outliers:
-        await ctx.log("OUTLIER_DETECTOR", f"⚠ {len(outliers)} outlier(s): {', '.join(o['lab'] + '(Z=' + str(o['z']) + ')' for o in outliers)}", "warn")
-    else:
-        await ctx.log("OUTLIER_DETECTOR", "No statistical outliers detected", "info")
-    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "OUTLIER_DETECTOR", "data": outliers})
-    await ctx.set_agent_status(orch, "OUTLIER_DETECTOR", "done")
+    try:
+        labs = ctx.patient.labs
+        outliers = []
+        for name, arr in labs.items():
+            if not isinstance(arr, list) or len(arr) < 3:
+                continue
+            try:
+                vals = [float(x["v"] if isinstance(x, dict) else x) for x in arr]
+            except (KeyError, TypeError, ValueError):
+                continue
+            history, latest_v = vals[:-1], vals[-1]
+            mean = sum(history) / len(history)
+            variance = sum((x - mean) ** 2 for x in history) / len(history)
+            std = math.sqrt(variance)
+            if std < 1e-6:
+                continue
+            z = abs((latest_v - mean) / std)
+            if z > cfg.OUTLIER_Z:
+                outliers.append({
+                    "lab":       name,
+                    "value":     latest_v,
+                    "mean":      round(mean, 2),
+                    "std":       round(std, 2),
+                    "z":         round(z, 2),
+                    "timepoint": arr[-1].get("t", "?") if isinstance(arr[-1], dict) else "?",
+                    "action":    "HOLD DIAGNOSIS — Recommend confirmed redraw",
+                })
+        ctx.outliers = outliers
+        if outliers:
+            summary = ", ".join(f"{o['lab']}(Z={o['z']})" for o in outliers)
+            await ctx.log("OUTLIER_DETECTOR", f"[!] {len(outliers)} outlier(s): {summary}", "warn")
+        else:
+            await ctx.log("OUTLIER_DETECTOR", "No statistical outliers detected", "info")
+    except Exception as exc:
+        log.exception("OUTLIER_DETECTOR error")
+        ctx.outliers = []
+
+    await ctx.send({"type": "agent_result", "orchestrator": "SAFETY", "agent": "OUTLIER_DETECTOR", "data": ctx.outliers})
+    await ctx.set_agent_status("SAFETY", "OUTLIER_DETECTOR", "done")
 
 
-async def agent_med_safety(ctx: AgentContext):
+async def agent_med_safety(ctx: AgentContext) -> None:
     orch = "SAFETY"
     await ctx.set_agent_status(orch, "MED_SAFETY", "active")
-    meds = ctx.patient.medications
-    labs = ctx.patient.labs
-    cr_arr = labs.get("creatinine", [])
-    cr_latest = cr_arr[-1]["v"] if cr_arr else 0
-    aki = cr_latest > 1.5
+    try:
+        meds = ctx.patient.medications or []
+        meds_lower = [m.lower() for m in meds]
+        cr_latest = _latest_lab(ctx.patient.labs, "creatinine")
+        aki = cr_latest > 1.5
 
-    conflicts = []
-    meds_lower = [m.lower() for m in meds]
-    has_piptazo = any("piperacillin" in m or "pip-tazo" in m or "tazobactam" in m for m in meds_lower)
+        has_piptazo = any(
+            "piperacillin" in m or "pip-tazo" in m or "tazobactam" in m
+            for m in meds_lower
+        )
 
-    for med in meds:
-        ml = med.lower()
-        status = "ok"
-        conflict = None
-        severity = None
-        if "vancomycin" in ml and has_piptazo and aki:
-            status = "conflict"
-            conflict = f"Vanco + Pip-Tazo: RR 3.7× AKI (MIMIC-IV 2023). Creatinine {cr_latest} mg/dL — nephrology review NOW."
-            severity = "HIGH"
-        elif "vancomycin" in ml and aki:
-            status = "warn"
-            conflict = f"Vancomycin AKI risk elevated (Cr {cr_latest}). Switch to AUC/MIC monitoring."
-            severity = "MEDIUM"
-        elif any(x in ml for x in ["gentamicin", "amikacin", "tobramycin"]):
-            status = "warn"
-            conflict = "Aminoglycoside: cumulative nephrotoxicity + ototoxicity. Daily drug levels required."
-            severity = "MEDIUM"
-        elif any(x in ml for x in ["ibuprofen", "ketorolac"]) and aki:
-            status = "conflict"
-            conflict = "NSAIDs contraindicated in AKI — prostaglandin-mediated renal perfusion inhibition."
-            severity = "HIGH"
-        conflicts.append({"med": med, "status": status, "conflict": conflict, "severity": severity})
+        conflicts = []
+        for med in meds:
+            ml = med.lower()
+            status, conflict, severity = "ok", None, None
 
-    ctx.med_conflicts = conflicts
-    high_conflicts = [c for c in conflicts if c["severity"] == "HIGH"]
-    if high_conflicts:
-        await ctx.log("MED_SAFETY", f"⚠ {len(high_conflicts)} HIGH-severity medication conflicts", "warn")
-    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "MED_SAFETY", "data": conflicts})
-    await ctx.set_agent_status(orch, "MED_SAFETY", "done")
+            if "vancomycin" in ml and has_piptazo and aki:
+                status, severity = "conflict", "HIGH"
+                conflict = (
+                    f"Vanco + Pip-Tazo: RR 3.7x AKI (MIMIC-IV 2023). "
+                    f"Creatinine {cr_latest} mg/dL — nephrology review NOW."
+                )
+            elif "vancomycin" in ml and aki:
+                status, severity = "warn", "MEDIUM"
+                conflict = f"Vancomycin AKI risk elevated (Cr {cr_latest}). Switch to AUC/MIC monitoring."
+            elif any(x in ml for x in ["gentamicin", "amikacin", "tobramycin"]):
+                status, severity = "warn", "MEDIUM"
+                conflict = "Aminoglycoside: nephrotoxicity + ototoxicity risk. Daily drug levels required."
+            elif any(x in ml for x in ["ibuprofen", "ketorolac", "nsaid"]) and aki:
+                status, severity = "conflict", "HIGH"
+                conflict = "NSAIDs contraindicated in AKI — prostaglandin-mediated renal perfusion inhibition."
+
+            conflicts.append({"med": med, "status": status, "conflict": conflict, "severity": severity})
+
+        ctx.med_conflicts = conflicts
+        high = [c for c in conflicts if c["severity"] == "HIGH"]
+        if high:
+            await ctx.log("MED_SAFETY", f"[!] {len(high)} HIGH-severity medication conflicts", "warn")
+        else:
+            await ctx.log("MED_SAFETY", f"Checked {len(meds)} medications — no critical conflicts", "info")
+    except Exception as exc:
+        log.exception("MED_SAFETY error")
+        ctx.med_conflicts = []
+
+    await ctx.send({"type": "agent_result", "orchestrator": "SAFETY", "agent": "MED_SAFETY", "data": ctx.med_conflicts})
+    await ctx.set_agent_status("SAFETY", "MED_SAFETY", "done")
 
 
-async def agent_alert_escalation(ctx: AgentContext):
+async def agent_alert_escalation(ctx: AgentContext) -> None:
     orch = "SAFETY"
     await ctx.set_agent_status(orch, "ALERT_ESCALATION", "active")
+    try:
+        alerts = []
+        pt = ctx.patient
+        v  = pt.vitals
+        labs = pt.labs
 
-    alerts = []
-    pt = ctx.patient
-    v = pt.vitals
-    labs = pt.labs
+        lactate = _latest_lab(labs, "lactate")   or None
+        cr      = _latest_lab(labs, "creatinine") or None
+        wbc     = _latest_lab(labs, "wbc")        or None
+        pct     = _latest_lab(labs, "procalcitonin") or None
 
-    def latest_v(key):
-        arr = labs.get(key, [])
-        return arr[-1]["v"] if arr else None
+        # Zero means "not measured" in our synthesiser
+        if lactate == 0.0: lactate = None
+        if cr == 0.0:      cr      = None
+        if wbc == 0.0:     wbc     = None
 
-    lactate = latest_v("lactate")
-    cr = latest_v("creatinine")
-    wbc = latest_v("wbc")
-    pct = latest_v("procalcitonin")
+        if lactate and lactate >= 4.0:
+            alerts.append({"level": "CRITICAL", "code": "LACTATE_CRITICAL",
+                "message": f"Lactate {lactate} mmol/L — critical tissue hypoperfusion. SSC 2021: resuscitation escalation + ICU attending NOW.",
+                "intervention": "Fluid bolus 30 mL/kg + vasopressor titration + repeat lactate in 1h"})
+        elif lactate and lactate >= 2.0:
+            alerts.append({"level": "WARNING", "code": "LACTATE_ELEVATED",
+                "message": f"Lactate {lactate} mmol/L — tissue hypoperfusion threshold reached (SSC 2021 §3.1).",
+                "intervention": "Guide resuscitation by serial lactate; target clearance ≥10%"})
 
-    if lactate and lactate >= 4.0:
-        alerts.append({"level": "CRITICAL", "code": "LACTATE_CRITICAL", "message": f"Lactate {lactate} mmol/L — critical tissue hypoperfusion. SSC 2021: resuscitation escalation + ICU attending NOW.", "intervention": "Fluid bolus 30mL/kg + vasopressor titration + repeat lactate in 1h"})
-    elif lactate and lactate >= 2.0:
-        alerts.append({"level": "WARNING", "code": "LACTATE_ELEVATED", "message": f"Lactate {lactate} mmol/L — tissue hypoperfusion threshold reached (SSC 2021 §3.1).", "intervention": "Guide resuscitation by serial lactate; target clearance ≥10%"})
+        if v.bpSys <= 90:
+            alerts.append({"level": "CRITICAL", "code": "HYPOTENSION",
+                "message": f"SBP {v.bpSys} mmHg — vasopressor threshold. Septic shock criteria met.",
+                "intervention": "Norepinephrine 0.01-0.5 mcg/kg/min; MAP target ≥65"})
 
-    if v.bpSys <= 90:
-        alerts.append({"level": "CRITICAL", "code": "HYPOTENSION", "message": f"SBP {v.bpSys} mmHg — vasopressor threshold. Septic shock criteria met.", "intervention": "Norepinephrine 0.01-0.5 mcg/kg/min; MAP target ≥65"})
+        if v.spo2 < 90:
+            alerts.append({"level": "CRITICAL", "code": "HYPOXEMIA",
+                "message": f"SpO2 {v.spo2}% — severe hypoxemia. ARDS evaluation required.",
+                "intervention": "Increase FiO2; consider NIV/intubation; prone positioning if P/F <150"})
 
-    if v.spo2 < 90:
-        alerts.append({"level": "CRITICAL", "code": "HYPOXEMIA", "message": f"SpO2 {v.spo2}% — severe hypoxemia. ARDS evaluation required (PaO2/FiO2 ratio).", "intervention": "Increase FiO2; consider NIV/intubation; prone positioning if PaO2/FiO2 <150"})
+        if cr and cr >= 3.5:
+            alerts.append({"level": "WARNING", "code": "AKI_STAGE3",
+                "message": f"Creatinine {cr} mg/dL — KDIGO AKI Stage 3 criteria met.",
+                "intervention": "Nephrology consult; hold nephrotoxins; consider RRT"})
 
-    if cr and cr >= 3.5:
-        alerts.append({"level": "WARNING", "code": "AKI_STAGE3", "message": f"Creatinine {cr} mg/dL — KDIGO AKI Stage 3 criteria met.", "intervention": "Nephrology consult; hold nephrotoxins; consider RRT if clinically indicated"})
+        if pct and pct >= 10.0:
+            alerts.append({"level": "CRITICAL", "code": "PCT_CRITICAL",
+                "message": f"Procalcitonin {pct} ng/mL — severe sepsis/septic shock biomarker.",
+                "intervention": "Escalate antimicrobial coverage; reassess source control"})
 
-    if pct and pct >= 10.0:
-        alerts.append({"level": "CRITICAL", "code": "PCT_CRITICAL", "message": f"Procalcitonin {pct} ng/mL — severe sepsis/septic shock biomarker threshold.", "intervention": "Escalate antimicrobial coverage; reassess source control"})
+        if wbc and wbc > 20.0:
+            alerts.append({"level": "WARNING", "code": "LEUKOCYTOSIS",
+                "message": f"WBC {wbc} x10^3/uL — severe leukocytosis. Bacterial sepsis or haematological process.",
+                "intervention": "Blood cultures x2 if not done; haematology review if no infectious source"})
 
-    if wbc and wbc > 20.0:
-        alerts.append({"level": "WARNING", "code": "LEUKOCYTOSIS", "message": f"WBC {wbc} ×10³/μL — severe leukocytosis. Bacterial sepsis or haematological process.", "intervention": "Blood cultures ×2 if not done; consider haematology if no infectious source"})
+        meds_lower = [m.lower() for m in (pt.medications or [])]
+        has_abx = any(
+            x in m for m in meds_lower
+            for x in ["cefazolin", "pip-tazo", "piperacillin", "meropenem", "vancomycin",
+                       "amoxicillin", "azithromycin", "levofloxacin"]
+        )
+        if lactate and lactate >= 2.0 and not has_abx:
+            alerts.append({"level": "CRITICAL", "code": "ANTIBIOTICS_DUE",
+                "message": "Sepsis criteria met but broad-spectrum antimicrobials not confirmed (SSC 2021: within 1 hour).",
+                "intervention": "Start pip-tazo +/- vancomycin NOW; blood cultures before if possible"})
 
-    has_abx = any(m.lower() for m in pt.medications if any(x in m.lower() for x in ["cefazolin", "pip-tazo", "piperacillin", "meropenem", "vancomycin"]))
-    if lactate and lactate >= 2.0 and not has_abx:
-        alerts.append({"level": "CRITICAL", "code": "ANTIBIOTICS_DUE", "message": "Sepsis criteria met but broad-spectrum antimicrobials not confirmed. SSC 2021: administer within 1 hour.", "intervention": "Start pip-tazo ± vancomycin NOW; blood cultures before if possible"})
+        ctx.alert_level = (
+            "CRITICAL" if any(a["level"] == "CRITICAL" for a in alerts) else
+            "WARNING"  if any(a["level"] == "WARNING"  for a in alerts) else
+            "WATCH"
+        )
+        ctx.alert_events = alerts
+        await ctx.log("ALERT_ESCALATION", f"Alert level: {ctx.alert_level} | {len(alerts)} active alerts", "info")
 
-    if any(a["level"] == "CRITICAL" for a in alerts):
-        ctx.alert_level = "CRITICAL"
-    elif any(a["level"] == "WARNING" for a in alerts):
-        ctx.alert_level = "WARNING"
-    else:
+    except Exception as exc:
+        log.exception("ALERT_ESCALATION error")
         ctx.alert_level = "WATCH"
+        ctx.alert_events = []
 
-    ctx.alert_events = alerts
-    await ctx.log("ALERT_ESCALATION", f"Alert level: {ctx.alert_level} | {len(alerts)} active alerts", "info")
-    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "ALERT_ESCALATION", "data": {"level": ctx.alert_level, "alerts": alerts}})
-    await ctx.set_agent_status(orch, "ALERT_ESCALATION", "done")
+    await ctx.send({"type": "agent_result", "orchestrator": "SAFETY", "agent": "ALERT_ESCALATION",
+                    "data": {"level": ctx.alert_level, "alerts": ctx.alert_events}})
+    await ctx.set_agent_status("SAFETY", "ALERT_ESCALATION", "done")
 
 
-async def agent_trend_classifier(ctx: AgentContext):
+async def agent_trend_classifier(ctx: AgentContext) -> None:
     orch = "TEMPORAL"
     await ctx.set_agent_status(orch, "TREND_CLASSIFIER", "active")
-    labs = ctx.patient.labs
     findings = []
+    try:
+        labs = ctx.patient.labs
+        for key, arr in labs.items():
+            if not isinstance(arr, list) or len(arr) < 2:
+                continue
+            try:
+                vals = [float(x["v"] if isinstance(x, dict) else x) for x in arr]
+            except (KeyError, TypeError, ValueError):
+                continue
 
-    for key, arr in labs.items():
-        if not isinstance(arr, list) or len(arr) < 2:
-            continue
-        vals = [x["v"] for x in arr]
-        ref = data.MIMIC_IV["lab_refs"].get(key, {})
-        n = len(vals)
-        latest_v = vals[-1]
-        first_v = vals[0]
-        if n >= 3:
-            xs = list(range(n))
-            xm = sum(xs) / n
-            ym = sum(vals) / n
-            num = sum((xs[i] - xm) * (vals[i] - ym) for i in range(n))
-            den = sum((xs[i] - xm) ** 2 for i in range(n))
-            slope = num / den if den else 0
-        else:
-            slope = vals[-1] - vals[0]
+            n = len(vals)
+            first_v, latest_v = vals[0], vals[-1]
+            ref = data.MIMIC_IV["lab_refs"].get(key, {})
 
-        pct_change = ((latest_v - first_v) / max(abs(first_v), 0.01)) * 100
-        direction = "RISING" if slope > 0.05 else "FALLING" if slope < -0.05 else "STABLE"
-        is_abnormal = ref and (latest_v > ref.get("high", 999) or latest_v < ref.get("low", 0))
+            # Least-squares slope
+            if n >= 3:
+                xs = list(range(n))
+                xm = sum(xs) / n
+                ym = sum(vals) / n
+                num = sum((xs[i] - xm) * (vals[i] - ym) for i in range(n))
+                den = sum((xs[i] - xm) ** 2 for i in range(n))
+                slope = num / den if den > 1e-10 else 0.0
+            else:
+                slope = vals[-1] - vals[0]
 
-        finding = {"lab": key, "direction": direction, "slope": round(slope, 3), "pct_change": round(pct_change, 1), "latest": latest_v, "first": first_v, "abnormal": is_abnormal}
+            pct_change  = ((latest_v - first_v) / max(abs(first_v), 0.01)) * 100
+            direction   = "RISING" if slope > 0.05 else "FALLING" if slope < -0.05 else "STABLE"
+            is_abnormal = bool(ref) and (
+                latest_v > ref.get("high", float("inf")) or
+                latest_v < ref.get("low", float("-inf"))
+            )
 
-        if direction == "RISING" and is_abnormal:
-            message = f"{key.upper()} rising {first_v}→{latest_v} ({pct_change:+.1f}%)"
-            if key == "lactate" and latest_v >= 2.0:
-                message += " — SSC 2021 lactate threshold breached"
-            elif key == "creatinine" and (latest_v / max(first_v, 0.01)) >= 1.5:
-                stage = 1 if (latest_v / first_v) < 2.0 else 2 if (latest_v / first_v) < 3.0 else 3
-                message += f" — KDIGO AKI Stage {stage} criteria"
-            findings.append({"lab": key, "severity": "critical" if latest_v > ref.get("critical_high", 99999) or latest_v > ref.get("critical", 99999) else "elevated", "message": message, "finding": finding})
+            finding = {
+                "lab": key, "direction": direction,
+                "slope": round(slope, 3), "pct_change": round(pct_change, 1),
+                "latest": latest_v, "first": first_v, "abnormal": is_abnormal,
+            }
+
+            if direction == "RISING" and is_abnormal:
+                crit_high = ref.get("critical", ref.get("critical_high", float("inf")))
+                severity  = "critical" if latest_v > crit_high else "elevated"
+                message   = f"{key.upper()} rising {first_v}→{latest_v} ({pct_change:+.1f}%)"
+                if key == "lactate" and latest_v >= 2.0:
+                    message += " — SSC 2021 lactate threshold breached"
+                elif key == "creatinine" and first_v > 0 and (latest_v / first_v) >= 1.5:
+                    stage = 1 if (latest_v / first_v) < 2.0 else 2 if (latest_v / first_v) < 3.0 else 3
+                    message += f" — KDIGO AKI Stage {stage}"
+                findings.append({"lab": key, "severity": severity, "message": message, "finding": finding})
+
+    except Exception as exc:
+        log.exception("TREND_CLASSIFIER error")
 
     ctx.lab_findings = findings
     ctx.trends = {f["lab"]: f["finding"] for f in findings}
     await ctx.log("TREND_CLASSIFIER", f"Classified {len(findings)} abnormal lab trends", "info")
-    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "TREND_CLASSIFIER", "data": findings})
-    await ctx.set_agent_status(orch, "TREND_CLASSIFIER", "done")
+    await ctx.send({"type": "agent_result", "orchestrator": "TEMPORAL", "agent": "TREND_CLASSIFIER", "data": findings})
+    await ctx.set_agent_status("TEMPORAL", "TREND_CLASSIFIER", "done")
 
 
-async def agent_trajectory_predictor(ctx: AgentContext):
+async def agent_trajectory_predictor(ctx: AgentContext) -> None:
     orch = "TEMPORAL"
     await ctx.set_agent_status(orch, "TRAJECTORY_PREDICTOR", "active")
-    labs = ctx.patient.labs
     predictions = {}
+    try:
+        labs = ctx.patient.labs
+        for key, arr in labs.items():
+            if not isinstance(arr, list) or len(arr) < 2:
+                continue
+            try:
+                vals = [float(x["v"] if isinstance(x, dict) else x) for x in arr]
+            except (KeyError, TypeError, ValueError):
+                continue
 
-    for key, arr in labs.items():
-        if not isinstance(arr, list) or len(arr) < 2:
-            continue
-        vals = [x["v"] for x in arr]
-        n = len(vals)
-        if n >= 2:
-            slope = vals[-1] - vals[-2]
-            pred_6h = round(vals[-1] + slope * 1, 2)
-            pred_12h = round(vals[-1] + slope * 2, 2)
-            ref = data.MIMIC_IV["lab_refs"].get(key, {})
+            # Weighted slope: recent delta gets 2x weight vs older
+            n = len(vals)
+            if n >= 3:
+                recent_slope = vals[-1] - vals[-2]
+                longer_slope = (vals[-1] - vals[0]) / max(n - 1, 1)
+                slope = 0.7 * recent_slope + 0.3 * longer_slope
+            else:
+                slope = vals[-1] - vals[0]
+
+            pred_6h  = round(max(0, vals[-1] + slope * 1), 3)
+            pred_12h = round(max(0, vals[-1] + slope * 2), 3)
+
+            ref  = data.MIMIC_IV["lab_refs"].get(key, {})
             high = ref.get("high", float("inf"))
             crit = ref.get("critical", ref.get("critical_high", float("inf")))
+
+            status = (
+                "CRITICAL_WITHIN_6H"  if pred_6h  > crit else
+                "WARNING_WITHIN_6H"   if pred_6h  > high else
+                "NORMALIZING"         if pred_12h <= high < vals[-1] else
+                "STABLE"
+            )
             predictions[key] = {
-                "current": vals[-1],
-                "pred_6h": pred_6h,
-                "pred_12h": pred_12h,
-                "trajectory_status": (
-                    "CRITICAL_WITHIN_6H" if pred_6h > crit else
-                    "WARNING_WITHIN_6H" if pred_6h > high else
-                    "NORMALIZING" if pred_12h <= high < vals[-1] else "STABLE"
-                ),
+                "current": vals[-1], "pred_6h": pred_6h, "pred_12h": pred_12h,
+                "trajectory_status": status,
             }
+
+    except Exception as exc:
+        log.exception("TRAJECTORY_PREDICTOR error")
 
     ctx.trajectory = predictions
     critical_labs = [k for k, v in predictions.items() if v["trajectory_status"] == "CRITICAL_WITHIN_6H"]
     if critical_labs:
         await ctx.log("TRAJECTORY_PREDICTOR", f"Projected critical in 6h: {', '.join(critical_labs)}", "warn")
-    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "TRAJECTORY_PREDICTOR", "data": predictions})
-    await ctx.set_agent_status(orch, "TRAJECTORY_PREDICTOR", "done")
+    await ctx.send({"type": "agent_result", "orchestrator": "TEMPORAL", "agent": "TRAJECTORY_PREDICTOR", "data": predictions})
+    await ctx.set_agent_status("TEMPORAL", "TRAJECTORY_PREDICTOR", "done")
 
+
+# ─── Temporal Lab Mapper ─────────────────────────────────────────────────────
+
+async def agent_temporal_lab_mapper(ctx: AgentContext) -> None:
+    """Builds a chronological disease progression timeline from vitals + labs + notes."""
+    orch = "TEMPORAL"
+    await ctx.set_agent_status(orch, "TEMPORAL_LAB_MAPPER", "active")
+    try:
+        pt   = ctx.patient
+        labs = pt.labs or {}
+
+        # Collect all timestamped events
+        events: List[Dict] = []
+
+        # Lab time-series events
+        for lab_name, arr in labs.items():
+            if not isinstance(arr, list):
+                continue
+            ref  = data.MIMIC_IV["lab_refs"].get(lab_name, {})
+            high = ref.get("high", float("inf"))
+            low  = ref.get("low", float("-inf"))
+            crit = ref.get("critical", ref.get("critical_high", float("inf")))
+            unit = ref.get("unit", "")
+            for entry in arr:
+                if not isinstance(entry, dict):
+                    continue
+                v, t = entry.get("v"), entry.get("t", "")
+                if v is None:
+                    continue
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                flag = (
+                    "CRITICAL" if fv > crit else
+                    "ABNORMAL" if fv > high or fv < low else
+                    "NORMAL"
+                )
+                events.append({
+                    "time":   t,
+                    "type":   "LAB",
+                    "label":  lab_name.upper(),
+                    "value":  fv,
+                    "unit":   unit,
+                    "flag":   flag,
+                })
+
+        # Vitals snapshot as a single event at latest time
+        v = pt.vitals
+        vitals_flags = []
+        if v.hr and (v.hr > 100 or v.hr < 60):     vitals_flags.append(f"HR {v.hr}")
+        if v.bpSys and v.bpSys <= 90:               vitals_flags.append(f"SBP {v.bpSys} (HYPOTENSION)")
+        if v.spo2 and v.spo2 < 92:                  vitals_flags.append(f"SpO2 {v.spo2}% (HYPOXEMIA)")
+        if v.rr and v.rr > 20:                      vitals_flags.append(f"RR {v.rr} (TACHYPNOEA)")
+        if v.temp and v.temp > 38.3:                vitals_flags.append(f"Temp {v.temp}C (FEVER)")
+        if v.gcs and v.gcs < 15:                    vitals_flags.append(f"GCS {v.gcs}/15 (ALTERED)")
+        if vitals_flags:
+            events.append({
+                "time":  "current",
+                "type":  "VITALS",
+                "label": "VITAL SIGNS",
+                "value": "; ".join(vitals_flags),
+                "unit":  "",
+                "flag":  "ABNORMAL",
+            })
+
+        # Note timeline events from NOTE_PARSER output
+        if ctx.parsed_notes:
+            for ev in ctx.parsed_notes.get("timeline_events", []):
+                if ev.get("event"):
+                    events.append({
+                        "time":  ev.get("time", "?"),
+                        "type":  "NOTE",
+                        "label": "CLINICAL NOTE",
+                        "value": ev["event"],
+                        "unit":  "",
+                        "flag":  "INFO",
+                    })
+
+        # Sort: put timestamped items first, then "current"
+        def sort_key(e):
+            t = e.get("time", "")
+            return ("z" + t) if t == "current" else (t or "")
+
+        events.sort(key=sort_key)
+
+        # Build human-readable timeline string
+        timeline_lines = []
+        for e in events:
+            flag_tag = f"[{e['flag']}]" if e["flag"] not in ("NORMAL", "INFO") else ""
+            if e["type"] == "LAB":
+                line = f"  {e['time'][:16]:16} | {e['type']:7} | {e['label']:16} {e['value']} {e['unit']} {flag_tag}"
+            else:
+                line = f"  {'current':16} | {e['type']:7} | {e['value']} {flag_tag}"
+            timeline_lines.append(line)
+
+        ctx.disease_timeline = events
+        ctx.timeline_str = "\n".join(timeline_lines) if timeline_lines else "  No timestamped data available"
+
+        await ctx.log("TEMPORAL_LAB_MAPPER",
+                      f"Timeline built: {len(events)} events "
+                      f"({sum(1 for e in events if e['flag'] not in ('NORMAL','INFO'))} abnormal)",
+                      "info")
+    except Exception as exc:
+        log.exception("TEMPORAL_LAB_MAPPER error")
+        ctx.disease_timeline = []
+        ctx.timeline_str = "Timeline unavailable"
+
+    await ctx.send({
+        "type": "agent_result", "orchestrator": orch, "agent": "TEMPORAL_LAB_MAPPER",
+        "data": {"event_count": len(ctx.disease_timeline), "timeline": ctx.timeline_str},
+    })
+    await ctx.set_agent_status(orch, "TEMPORAL_LAB_MAPPER", "done")
+
+
+# ─── Wave 2 agents ────────────────────────────────────────────────────────────
 
 async def agent_semantic_retriever(ctx: AgentContext) -> List[Dict]:
     orch = "EVIDENCE"
     await ctx.set_agent_status(orch, "SEMANTIC_RETRIEVER", "active")
+    retrieved: List[Dict] = []
 
-    query_parts = [
-        ctx.patient.admitDiag,
-        *[f["message"] for f in ctx.lab_findings],
-        *ctx.patient.medications,
-        *(["acute kidney injury creatinine"] if ctx.outliers else []),
-        f"sepsis lactate {ctx.patient.labs.get('lactate', [{}])[-1].get('v', '')} mmol/L",
-        "SOFA organ failure",
-    ]
-    query = ". ".join(str(x) for x in query_parts if x)
+    try:
+        finding_msgs = [f["message"] for f in (ctx.lab_findings or [])]
+        alert_msgs   = [a["message"] for a in (ctx.alert_events or [])]
+        query_parts  = [
+            ctx.patient.admitDiag,
+            *finding_msgs[:3],
+            *ctx.patient.medications[:5],
+            f"sepsis lactate {_latest_lab(ctx.patient.labs, 'lactate')} mmol/L",
+            "SOFA organ failure septic shock",
+        ] + alert_msgs[:2]
+        query = ". ".join(str(x) for x in query_parts if x)
 
-    retrieved = []
-    if data._guideline_embeddings and await ollama.is_online():
-        await ctx.log("SEMANTIC_RETRIEVER", "Computing bge-m3 query embedding...", "info")
-        try:
-            q_emb = await ollama.embed(query)
-            scored = []
-            for i, g in enumerate(data.GUIDELINES):
-                score = cosine_sim(q_emb, data._guideline_embeddings[i])
-                scored.append({**g, "score": round(float(score), 4)})
-            scored.sort(key=lambda x: x["score"], reverse=True)
-            retrieved = scored[:cfg.TOP_K_GUIDELINES]
-            await ctx.log("SEMANTIC_RETRIEVER", f"Semantic retrieval done. Top score: {retrieved[0]['score']}", "info")
-        except Exception as e:
-            await ctx.log("SEMANTIC_RETRIEVER", f"Embed failed: {e}, using keyword fallback", "warn")
+        if data._guideline_embeddings and await ollama.is_online():
+            await ctx.log("SEMANTIC_RETRIEVER", "Computing bge-m3 query embedding…", "info")
+            try:
+                q_emb  = await ollama.embed(query)
+                scored = [
+                    {**g, "score": round(float(cosine_sim(q_emb, data._guideline_embeddings[i])), 4)}
+                    for i, g in enumerate(data.GUIDELINES)
+                ]
+                scored.sort(key=lambda x: x["score"], reverse=True)
+                retrieved = scored[:cfg.TOP_K_GUIDELINES]
+                await ctx.log("SEMANTIC_RETRIEVER", f"Semantic retrieval done. Top score: {retrieved[0]['score']}", "info")
+            except Exception as e:
+                await ctx.log("SEMANTIC_RETRIEVER", f"Embed failed ({e}), using keyword fallback", "warn")
 
-    if not retrieved:
-        lower = query.lower()
-        retrieved = sorted([{**g, "score": keyword_score(lower, g["keywords"])} for g in data.GUIDELINES], key=lambda x: x["score"], reverse=True)[:cfg.TOP_K_GUIDELINES]
-        await ctx.log("SEMANTIC_RETRIEVER", "Using keyword fallback retrieval", "warn")
+        if not retrieved:
+            lower = query.lower()
+            retrieved = sorted(
+                [{**g, "score": keyword_score(lower, g["keywords"])} for g in data.GUIDELINES],
+                key=lambda x: x["score"], reverse=True,
+            )[:cfg.TOP_K_GUIDELINES]
+            await ctx.log("SEMANTIC_RETRIEVER", "Using keyword fallback retrieval", "warn")
+
+    except Exception as exc:
+        log.exception("SEMANTIC_RETRIEVER error")
+        retrieved = data.GUIDELINES[:cfg.TOP_K_GUIDELINES]
 
     ctx.retrieved_guidelines = retrieved
-    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "SEMANTIC_RETRIEVER", "data": [{"source": g["source"], "section": g["section"], "score": g.get("score", 0), "text": g["text"]} for g in retrieved]})
+    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "SEMANTIC_RETRIEVER",
+                    "data": [{"source": g.get("source", g.get("citation", "")),
+                               "section": g["section"], "score": g.get("score", 0), "text": g["text"]}
+                              for g in retrieved]})
     await ctx.set_agent_status(orch, "SEMANTIC_RETRIEVER", "done")
     return retrieved
 
 
-async def agent_rag_explainer(ctx: AgentContext, guidelines: List[Dict]):
+async def agent_rag_explainer(ctx: AgentContext, guidelines: List[Dict]) -> None:
     orch = "EVIDENCE"
     await ctx.set_agent_status(orch, "RAG_EXPLAINER", "active")
-
-    guideline_ctx = "\n\n".join(f"[{g['source']} {g['section']}]: {g['text']}" for g in guidelines)
-    findings_str = "; ".join(f["message"] for f in ctx.lab_findings) or "No major lab trends"
-    outlier_str = "; ".join(f"⚠ {o['lab'].upper()} value {o['value']} (Z={o['z']}) inconsistent with 72h trend" for o in ctx.outliers) or "None"
-
-    messages = [
-        {"role": "system", "content": "You are a clinical evidence agent. Using retrieved guidelines, write 3-4 concise, cited clinical observations relevant to the patient findings. Use [Source §Section] citation format. Be direct and clinical."},
-        {"role": "user", "content": f"Patient: {ctx.patient.name}, {ctx.patient.age}{ctx.patient.sex}. {ctx.patient.admitDiag}.\nLab findings: {findings_str}\nOutliers: {outlier_str}\n\nGuidelines:\n{guideline_ctx}\n\nWrite cited observations:"},
-    ]
-
     explanation = ""
+
     try:
-        if await ollama.is_online():
-            explanation = await ollama.chat(cfg.RAG_EXPLAIN_MODEL, messages, max_tokens=500)
-        else:
-            raise RuntimeError("Ollama offline")
-    except Exception:
-        try:
-            explanation = await nim.chat(cfg.FALLBACK_MODEL, messages, ctx.nim_key, max_tokens=500)
-        except Exception as e:
-            explanation = f"RAG explanation unavailable: {e}"
+        guideline_ctx = "\n\n".join(
+            f"[{g.get('source', g.get('citation', ''))} {g['section']}]: {g['text']}"
+            for g in (guidelines or [])
+        )
+        findings_str  = "; ".join(f["message"] for f in (ctx.lab_findings or [])) or "No major lab trends"
+        outlier_str   = "; ".join(
+            f"OUTLIER {o['lab'].upper()} value {o['value']} (Z={o['z']}) vs 72h mean {o['mean']}"
+            for o in (ctx.outliers or [])
+        ) or "None"
+
+        messages = [
+            {"role": "system",
+             "content": "You are a clinical evidence agent. Using retrieved guidelines, write 3-4 concise, cited clinical observations relevant to the patient findings. Use [Source §Section] citation format. Be direct and clinical."},
+            {"role": "user",
+             "content": (
+                 f"Patient: {ctx.patient.name}, {ctx.patient.age}{ctx.patient.sex}. "
+                 f"{ctx.patient.admitDiag}.\n"
+                 f"Lab findings: {findings_str}\nOutliers: {outlier_str}\n\n"
+                 f"Guidelines:\n{guideline_ctx}\n\nWrite cited observations:"
+             )},
+        ]
+        explanation = await _ollama_or_nim(ctx, messages, max_tokens=500)
+    except Exception as exc:
+        log.exception("RAG_EXPLAINER error")
+        explanation = f"RAG explanation unavailable: {exc}"
 
     ctx.rag_explanation = explanation
-    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "RAG_EXPLAINER", "data": {"explanation": explanation}})
+    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "RAG_EXPLAINER",
+                    "data": {"explanation": explanation}})
     await ctx.set_agent_status(orch, "RAG_EXPLAINER", "done")
 
 
-async def agent_synthesis(ctx: AgentContext):
+# ─── Wave 3 — Chief synthesis ─────────────────────────────────────────────────
+
+async def agent_synthesis(ctx: AgentContext) -> None:
     orch = "SYNTHESIS"
     await ctx.set_agent_status(orch, "CHIEF_AGENT", "active")
 
-    pt = ctx.patient
-    sofa = ctx.sofa
-    news2 = ctx.news2
-    outlier_note = ""
+    pt     = ctx.patient
+    sofa   = ctx.sofa or {}
+    news2  = ctx.news2 or {}
+    labs   = pt.labs or {}
+
+    # Build lab trajectory string
+    lab_traj_lines = []
+    for k, v in labs.items():
+        if not isinstance(v, list):
+            continue
+        ref  = data.MIMIC_IV["lab_refs"].get(k, {})
+        unit = ref.get("unit", "")
+        vals = " -> ".join(str(x.get("v", x)) for x in v)
+        lab_traj_lines.append(f"  {k.upper()}: {vals} {unit}")
+    lab_traj = "\n".join(lab_traj_lines) or "  No lab data available"
+
+    # Outlier note
+    outlier_note = "\n".join(
+        f"!! OUTLIER HELD: {o['lab'].upper()} {o['value']} at {o['timepoint']} "
+        f"(Z={o['z']} vs 72h mean {o['mean']}+/-{o['std']}) — DIAGNOSIS HELD, REDRAW REQUIRED"
+        for o in (ctx.outliers or [])
+    )
+
+    # Medication conflicts
+    med_conflicts_str = "\n".join(
+        f"  - {c['med']}: {c['conflict']}"
+        for c in (ctx.med_conflicts or []) if c.get("conflict")
+    ) or "  No conflicts identified"
+
+    # Guideline context
+    guideline_ctx = "\n".join(
+        f"[{g.get('source', g.get('citation', ''))} {g['section']}]: {g['text']}"
+        for g in (ctx.retrieved_guidelines or [])
+    )
+
+    # Alert summary
+    alert_summary = "\n".join(
+        f"  [{a['level']}] {a['message']}"
+        for a in (ctx.alert_events or [])
+    ) or "  No active alerts"
+
+    # Trajectory summary
+    traj_summary = "\n".join(
+        f"  {k.upper()}: pred 6h={v.get('pred_6h','?')} 12h={v.get('pred_12h','?')} [{v.get('trajectory_status','?')}]"
+        for k, v in (ctx.trajectory or {}).items()
+    ) or "  Insufficient data"
+
+    # Temporal findings
+    findings_str = "\n".join(
+        f"  - {f['message']}" for f in (ctx.lab_findings or [])
+    ) or "  None"
+
+    sofa_str = (
+        f"{sofa.get('total','?')}/24 "
+        f"(Resp:{sofa.get('resp','?')} Coag:{sofa.get('coag','?')} "
+        f"Liver:{sofa.get('liver','?')} Cardio:{sofa.get('cardio','?')} "
+        f"CNS:{sofa.get('cns','?')} Renal:{sofa.get('renal','?')}, "
+        f"MIMIC-IV predicted mortality {sofa.get('mortality_pct','?')}%)"
+    )
+
+    # Build outlier safety block — critical for PS compliance
+    outlier_safety_block = ""
     if ctx.outliers:
-        outlier_note = "\n".join(
-            f"⚠ OUTLIER HELD: {o['lab'].upper()} {o['value']} at {o['timepoint']} (Z={o['z']} vs 72h mean {o['mean']}±{o['std']}) — DIAGNOSIS HELD, REDRAW REQUIRED"
+        outlier_safety_block = "OUTLIER SAFETY BLOCK — DIAGNOSIS HELD ON THESE LABS:\n" + "\n".join(
+            f"  !! {o['lab'].upper()} = {o['value']} at {o['timepoint']} "
+            f"(Z-score {o['z']} vs 72h mean {o['mean']}+/-{o['std']}) "
+            f"— PROBABLE LAB ERROR. Chief Agent must NOT update diagnosis on this value. Confirmed redraw required."
             for o in ctx.outliers
         )
 
-    lab_traj = "\n".join(
-        f"{k.upper()}: {' → '.join(str(x['v']) + ((' [OUTLIER]') if x.get('outlier') else '') for x in v)} {data.MIMIC_IV['lab_refs'].get(k, {}).get('unit', '')}"
-        for k, v in pt.labs.items() if isinstance(v, list)
-    )
+    # Timeline string from TEMPORAL_LAB_MAPPER
+    timeline_block = ctx.timeline_str or "Timeline not available"
 
-    med_conflicts = "\n".join(f"• {c['med']}: {c['conflict']}" for c in ctx.med_conflicts if c["conflict"])
-    guideline_ctx = "\n".join(f"[{g['source']} {g['section']}]: {g['text']}" for g in ctx.retrieved_guidelines)
-    alert_summary = "\n".join(f"• [{a['level']}] {a['message']}" for a in ctx.alert_events)
-    traj_summary = "\n".join(f"• {k.upper()}: pred 6h={v.get('pred_6h', '?')}, 12h={v.get('pred_12h', '?')} [{v.get('trajectory_status', '?')}]" for k, v in ctx.trajectory.items())
+    prompt = f"""You are the Chief Synthesis Agent for HC01 — ICU Diagnostic Risk Assistant.
+In the ICU, hours — sometimes minutes — determine survival outcomes. Your role is to integrate all agent outputs below and produce a structured Diagnostic Risk Report.
 
-    mortality_pct = sofa["mortality_pct"] if sofa else "?"
-    sofa_str = f"{sofa['total']}/24 (Resp:{sofa['resp']} Coag:{sofa['coag']} Liver:{sofa['liver']} Cardio:{sofa['cardio']} CNS:{sofa['cns']} Renal:{sofa['renal']}, MIMIC-IV predicted mortality {mortality_pct}%)" if sofa else "N/A"
+CRITICAL RULES:
+1. Any lab value flagged in the OUTLIER SAFETY BLOCK below is a PROBABLE LAB ERROR. You MUST flag it as held, cite the Z-score, and REFUSE to alter the diagnosis based on that value until a confirmed redraw is received.
+2. Every flagged risk MUST cite the specific clinical guideline or dataset that supports it.
+3. End with the mandatory safety disclaimer.
+Respond ONLY with the structured output — no preamble, no chain-of-thought before CLINICAL ASSESSMENT.
 
-    prompt = f"""You are the Chief Diagnostic Agent for HC01 — ICU Diagnostic Risk Assistant.
-Synthesize all agent outputs below and produce a structured clinical assessment.
-
-PATIENT: {pt.name}, {pt.age}{pt.sex}, Day {pt.daysInICU:.1f} ICU, {pt.weight}kg
+PATIENT: {pt.name}, {pt.age}{pt.sex}, Day {pt.daysInICU:.1f} ICU, {pt.weight} kg
 ADMISSION: {pt.admitDiag}
 
-VITALS: HR {pt.vitals.hr}bpm | BP {pt.vitals.bpSys}/{pt.vitals.bpDia}mmHg | MAP {pt.vitals.map}mmHg | RR {pt.vitals.rr}/min | SpO2 {pt.vitals.spo2}% | Temp {pt.vitals.temp}°C | GCS {pt.vitals.gcs}/15 | FiO2 {pt.vitals.fio2}
+VITALS: HR {pt.vitals.hr} bpm | BP {pt.vitals.bpSys}/{pt.vitals.bpDia} mmHg | MAP {pt.vitals.map} mmHg | RR {pt.vitals.rr}/min | SpO2 {pt.vitals.spo2}% | Temp {pt.vitals.temp}C | GCS {pt.vitals.gcs}/15 | FiO2 {pt.vitals.fio2}
 
-LAB TRAJECTORIES (72h):
+DISEASE PROGRESSION TIMELINE (chronological):
+{timeline_block}
+
+LAB TRAJECTORIES (72h summary):
 {lab_traj}
 
 SOFA: {sofa_str}
-NEWS2: {news2['total']}/20 — {news2['level']} RISK
+NEWS2: {news2.get('total','?')}/20 — {news2.get('level','?')} RISK
 
-TEMPORAL LAB FLAGS:
-{chr(10).join('• ' + f['message'] for f in ctx.lab_findings) or 'None'}
+TEMPORAL LAB FLAGS (from Temporal Lab Mapper Agent):
+{findings_str}
 
-TRAJECTORY PREDICTIONS:
-{traj_summary or 'Insufficient data'}
+TRAJECTORY PREDICTIONS (6h/12h):
+{traj_summary}
 
-{outlier_note}
+{outlier_safety_block}
 
-ACTIVE ALERTS ({ctx.alert_level}):
-{alert_summary or 'No active alerts'}
+ACTIVE ALERTS ({ctx.alert_level}) — from Alert Escalation Agent:
+{alert_summary}
 
-MEDICATION SAFETY:
-{med_conflicts or 'No conflicts identified'}
+MEDICATION SAFETY — from Med Safety Agent:
+{med_conflicts_str}
 
-RAG EVIDENCE:
+GUIDELINE RAG EVIDENCE — from Guideline RAG Agent:
 {guideline_ctx}
 
 RAG AGENT SYNTHESIS:
 {ctx.rag_explanation or 'Not available'}
 
-PARSED NOTE FINDINGS:
+PARSED NOTE FINDINGS — from Note Parser Agent:
 {json.dumps(ctx.parsed_notes)[:600] if ctx.parsed_notes else 'N/A'}
 
-DATASETS: MIMIC-IV v2.2 (73,141 ICU stays), eICU-CRD (200,859 encounters), PhysioNet Sepsis 2019
+DATASETS: MIMIC-IV v2.2 (73,141 ICU stays), eICU-CRD (200,859 encounters), PhysioNet Sepsis Challenge 2019 (60,000+ records)
 
 Produce EXACTLY this structure:
 
 CLINICAL ASSESSMENT:
-[3 sentences: current picture, trajectory, immediate risk]
+[3 sentences: current clinical picture, trajectory from timeline, immediate survival risk]
+
+DISEASE PROGRESSION TIMELINE SUMMARY:
+[2-3 sentences narrating how key vitals and labs shifted chronologically — when did deterioration begin, what changed, what is the current trajectory]
 
 DIFFERENTIAL DIAGNOSIS:
-1. [Diagnosis] — [XX]% confidence — [evidence citing guideline or dataset]
-2. [Diagnosis] — [XX]% confidence — [evidence]
-3. [Diagnosis] — [XX]% confidence — [evidence]
+1. [Diagnosis] — [XX]% confidence — [cite specific guideline §section or MIMIC-IV stat]
+2. [Diagnosis] — [XX]% confidence — [cite guideline]
+3. [Diagnosis] — [XX]% confidence — [cite guideline]
 
-KEY CONCERNS:
-• [Concern] [Guideline citation in brackets]
-• [Concern] [Guideline citation]
-• [Concern] [Guideline citation]
+KEY CONCERNS (with guideline citations):
+- [Concern] [Source §Section]
+- [Concern] [Source §Section]
+
+OUTLIER FLAGS (from Outlier Detection Module):
+[List each held lab with Z-score, reason flagged as probable error, and required action — OR "No outliers detected"]
 
 RECOMMENDED ACTIONS:
-• [Action] — [Urgency: IMMEDIATE/URGENT/ROUTINE]
-• [Action] — [Urgency]
-• [Action] — [Urgency]
+- [Action] — [IMMEDIATE / URGENT / ROUTINE]
 
 SHIFT HANDOVER BRIEF (30 seconds):
-[2-3 plain English sentences for incoming doctor]
+[2-3 plain English sentences for the incoming doctor]
 
 ---
-Be precise. Cite guidelines and MIMIC-IV stats. Flag held diagnoses explicitly. Reference dataset context where relevant."""
+SAFETY DISCLAIMER: This report is generated by an AI decision-support system (HC01). All outputs are decision-support only and do NOT constitute a clinical diagnosis. All flagged risks, drug interactions, and recommended actions must be verified and acted upon by a qualified clinician. Held diagnoses must not be confirmed until laboratory redraws are obtained and reviewed by clinical staff."""
 
-    messages = [{"role": "user", "content": prompt}]
+    messages  = [
+        {"role": "system", "content": (
+            "You are the Chief Synthesis Agent for HC01. "
+            "Output ONLY the structured clinical report. "
+            "No reasoning. No meta-commentary. No thinking. "
+            "Start your response immediately with 'CLINICAL ASSESSMENT:'"
+        )},
+        {"role": "user", "content": "/no_think\n\n" + prompt},
+    ]
     full_text = ""
 
-    async def on_chunk(delta: str, accumulated: str):
+    async def on_chunk(delta: str, accumulated: str) -> None:
         nonlocal full_text
         full_text = accumulated
         await ctx.send({"type": "stream_chunk", "orchestrator": orch, "agent": "CHIEF_AGENT", "content": delta})
 
+    nim_key = ctx.nim_key or cfg.nim_key("chief")
+
+    # Synthesis: NIM Chief (best quality) → NIM Fallback → local qwen3 → rule-based
     try:
-        full_text = await nim.chat(cfg.CHIEF_MODEL, messages, ctx.nim_key, max_tokens=1800, on_chunk=on_chunk)
-    except Exception as e:
-        await ctx.log("CHIEF_AGENT", f"Nemotron failed: {e}. Using fallback.", "warn")
+        if not nim_key:
+            raise RuntimeError("No NIM API key configured")
+        await ctx.log("CHIEF_AGENT", "NIM Chief synthesis starting…", "info")
+        full_text = await nim.chat(cfg.CHIEF_MODEL, messages, nim_key, max_tokens=1800, on_chunk=on_chunk)
+    except Exception as e_chief:
+        await ctx.log("CHIEF_AGENT", f"NIM Chief failed ({e_chief}), trying NIM fallback…", "warn")
+        fallback_key = ctx.nim_key or cfg.nim_key("fallback")
         try:
-            full_text = await nim.chat(cfg.FALLBACK_MODEL, messages, ctx.nim_key, max_tokens=1500, on_chunk=on_chunk)
-        except Exception as e2:
-            full_text = f"Chief Agent unavailable: {e2}"
+            if not fallback_key:
+                raise RuntimeError("No NIM fallback key configured")
+            full_text = await nim.chat(cfg.FALLBACK_MODEL, messages, fallback_key, max_tokens=1500, on_chunk=on_chunk)
+        except Exception as e_fallback:
+            await ctx.log("CHIEF_AGENT", f"NIM fallback failed ({e_fallback}), trying local model…", "warn")
+            try:
+                if await ollama.is_online():
+                    full_text = await ollama.chat(cfg.NOTE_MODEL, messages, max_tokens=1200, on_chunk=on_chunk)
+                else:
+                    raise RuntimeError("Ollama offline")
+            except Exception as e_local:
+                await ctx.log("CHIEF_AGENT", f"All LLM endpoints failed — using rule-based: {e_local}", "error")
+                full_text = _rule_based_synthesis(ctx, sofa, news2)
+                await on_chunk(full_text, full_text)
 
-    ctx.synthesis = full_text
-    hm = re.search(r'SHIFT HANDOVER BRIEF[^:]*:\s*([\s\S]+?)(?:\n\n|\n---|\n#|$)', full_text, re.I)
-    ctx.handover = hm.group(1).strip() if hm else ""
+    # Extract structured sections — strip reasoning/chain-of-thought preamble
+    # First try to find CLINICAL ASSESSMENT as entry point
+    ca_match = re.search(r'(CLINICAL ASSESSMENT:[\s\S]+)', full_text, re.I)
+    structured = ca_match.group(1).strip() if ca_match else full_text
 
-    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "CHIEF_AGENT", "data": {"synthesis": full_text, "handover": ctx.handover}})
+    # Strip think blocks if model included them anyway
+    structured = re.sub(r'<think>[\s\S]*?</think>', '', structured, flags=re.I).strip()
+
+    # Clean up lines that are pure reasoning meta-commentary (heuristic: lines starting with "But ", "Now ", "Let's ", "We ")
+    lines = structured.split('\n')
+    clean_lines = []
+    in_section = False
+    section_headers = {'CLINICAL ASSESSMENT', 'DISEASE PROGRESSION', 'DIFFERENTIAL DIAGNOSIS',
+                       'KEY CONCERNS', 'OUTLIER FLAGS', 'RECOMMENDED ACTIONS', 'SHIFT HANDOVER BRIEF',
+                       'SAFETY DISCLAIMER', '---'}
+    for line in lines:
+        stripped = line.strip()
+        is_header = any(stripped.upper().startswith(h) for h in section_headers)
+        is_bullet = stripped.startswith(('-', '*', '1.', '2.', '3.', '4.', '5.'))
+        is_blank  = not stripped
+        # Skip pure reasoning lines that aren't section content
+        is_reasoning = (
+            not in_section and
+            any(stripped.startswith(p) for p in ("But ", "Now ", "Let's ", "We need", "We can", "We must", "So we", "Given ", "Looking at", "I think"))
+        )
+        if is_header:
+            in_section = True
+        if not is_reasoning or in_section or is_bullet or is_blank:
+            clean_lines.append(line)
+
+    ctx.synthesis = '\n'.join(clean_lines).strip()
+    hm = re.search(r'SHIFT HANDOVER BRIEF[^:]*:\s*([\s\S]+?)(?:\n\n|\n---|\n#|$)', ctx.synthesis, re.I)
+    ctx.handover  = hm.group(1).strip() if hm else ""
+
+    await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "CHIEF_AGENT",
+                    "data": {"synthesis": full_text, "handover": ctx.handover}})
     await ctx.set_agent_status(orch, "CHIEF_AGENT", "done")
 
 
-async def master_orchestrate(ctx: AgentContext):
+def _rule_based_synthesis(ctx: AgentContext, sofa: Dict, news2: Dict) -> str:
+    """Deterministic fallback when all LLM endpoints fail."""
+    pt    = ctx.patient
+    total = sofa.get("total", "?")
+    mort  = sofa.get("mortality_pct", "?")
+    n2    = news2.get("total", "?")
+    level = news2.get("level", "?")
+    alerts = "\n".join(f"- [{a['level']}] {a['message']}" for a in (ctx.alert_events or []))
+    meds   = "\n".join(f"- {c['med']}: {c['conflict']}" for c in (ctx.med_conflicts or []) if c.get("conflict")) or "- None"
+    return f"""CLINICAL ASSESSMENT:
+{pt.name} ({pt.age}{pt.sex}) on Day {pt.daysInICU:.1f} ICU with {pt.admitDiag}. SOFA {total}/24 (predicted mortality {mort}%), NEWS2 {n2}/20 ({level} risk). Alert status: {ctx.alert_level}.
+
+ACTIVE ALERTS:
+{alerts or "None"}
+
+MEDICATION SAFETY:
+{meds}
+
+SHIFT HANDOVER BRIEF (30 seconds):
+Patient admitted for {pt.admitDiag}. SOFA {total}, NEWS2 {n2}. Alert level {ctx.alert_level}. Review active alerts and medication conflicts above. NIM AI synthesis unavailable — clinical team review required.
+"""
+
+
+# ─── Master orchestrator ──────────────────────────────────────────────────────
+
+async def master_orchestrate(ctx: AgentContext) -> None:
     start = time.time()
-    pt = ctx.patient
+    pt    = ctx.patient
     await ctx.log("HC01", f"=== PIPELINE START: {pt.name} {pt.age}{pt.sex} ===", "info")
     await ctx.send({"type": "orchestrator_status", "orchestrator": "MASTER", "status": "active"})
 
-    ctx.sofa = calc_sofa(pt)
-    ctx.news2 = calc_news2(pt)
-    await ctx.send({"type": "agent_result", "orchestrator": "SCORING", "agent": "SOFA_NEWS2", "data": {"sofa": ctx.sofa, "news2": ctx.news2}})
+    # Scoring (synchronous, no LLM)
+    try:
+        ctx.sofa  = calc_sofa(pt)
+        ctx.news2 = calc_news2(pt)
+    except Exception as exc:
+        log.exception("SOFA/NEWS2 calculation failed")
+        ctx.sofa  = {"total": 0, "mortality_pct": 0}
+        ctx.news2 = {"total": 0, "level": "LOW"}
 
-    await ctx.log("HC01", "Wave 1: Launching 5 agents in parallel...", "info")
+    await ctx.send({"type": "agent_result", "orchestrator": "SCORING", "agent": "SOFA_NEWS2",
+                    "data": {"sofa": ctx.sofa, "news2": ctx.news2}})
+
+    # Wave 1 — parallel
+    await ctx.log("HC01", "Wave 1: Launching 6 agents in parallel…", "info")
     for orch in ["CLINICAL", "SAFETY", "TEMPORAL"]:
         await ctx.set_orch_status(orch, "active")
 
@@ -476,35 +881,62 @@ async def master_orchestrate(ctx: AgentContext):
         agent_alert_escalation(ctx),
         agent_trend_classifier(ctx),
         agent_trajectory_predictor(ctx),
+        return_exceptions=True,
     )
+
+    # Temporal Lab Mapper runs after note parser and trend classifier finish
+    # (needs ctx.parsed_notes and ctx.lab_findings)
+    await agent_temporal_lab_mapper(ctx)
 
     for orch in ["CLINICAL", "SAFETY", "TEMPORAL"]:
         await ctx.set_orch_status(orch, "done")
     await ctx.log("HC01", "Wave 1 complete.", "info")
 
+    # Wave 2 — evidence retrieval
     await ctx.set_orch_status("EVIDENCE", "active")
     guidelines = await agent_semantic_retriever(ctx)
     await agent_rag_explainer(ctx, guidelines)
     await ctx.set_orch_status("EVIDENCE", "done")
 
+    # Wave 3 — chief synthesis
     await ctx.set_orch_status("SYNTHESIS", "active")
     await agent_synthesis(ctx)
     await ctx.set_orch_status("SYNTHESIS", "done")
 
     elapsed = round((time.time() - start) * 1000)
-    await ctx.send({"type": "pipeline_complete", "duration_ms": elapsed, "alert_level": ctx.alert_level, "sofa_total": ctx.sofa["total"], "news2_total": ctx.news2["total"]})
-    await ctx.log("HC01", f"=== PIPELINE COMPLETE in {elapsed}ms ===", "info")
+    await ctx.send({
+        "type":          "pipeline_complete",
+        "duration_ms":   elapsed,
+        "alert_level":   ctx.alert_level,
+        "sofa_total":    ctx.sofa.get("total", 0),
+        "news2_total":   ctx.news2.get("total", 0),
+    })
+    await ctx.log("HC01", f"=== PIPELINE COMPLETE in {elapsed} ms ===", "info")
 
 
-async def preembed_guidelines():
+async def preembed_guidelines() -> None:
+    """Pre-compute embeddings for all guidelines at startup."""
     if not await ollama.is_online():
+        log.info("Ollama offline — skipping guideline pre-embedding (keyword fallback active)")
         return
     models = await ollama.available_models()
-    if not any("bge-m3" in m for m in models):
+    embed_models = ["nomic-embed-text", "bge-m3", "bge-large"]
+    if not any(any(em in m for em in embed_models) for m in models):
+        log.info("No embedding model found in Ollama — skipping pre-embedding")
         return
     embeds = []
     for g in data.GUIDELINES:
-        text = f"{g['source']} {g['section']}: {g['text']}"
-        emb = await ollama.embed(text)
-        embeds.append(emb)
-    data._guideline_embeddings = embeds
+        text = f"{g.get('source', g.get('citation', ''))} {g['section']}: {g['text']}"
+        try:
+            emb = await ollama.embed(text)
+            embeds.append(emb)
+        except Exception as exc:
+            log.warning("Failed to embed guideline %s: %s", g.get("id", "?"), exc)
+            embeds.append(None)
+    # Store all that succeeded; fall back to keyword for None slots
+    failed = sum(1 for e in embeds if e is None)
+    if failed == 0:
+        data._guideline_embeddings = embeds
+        log.info("Pre-embedded %d guidelines", len(embeds))
+    else:
+        log.warning("%d guideline embeddings failed; using keyword fallback", failed)

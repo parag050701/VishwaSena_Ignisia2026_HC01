@@ -1,485 +1,438 @@
 """
-Voice Workflow Engine - Orchestrates complete voice-to-voice clinical workflows
-Handles: STT → EHR → Clinical Analysis → TTS
+Voice Workflow Engine for HC01.
+Pipeline: Audio → STT → Intent → Patient Lookup → Diagnosis → Response → TTS
 """
 
+from __future__ import annotations
+
 import asyncio
-import logging
-from typing import Optional, Dict, List, Any, Callable
-from dataclasses import dataclass
-from datetime import datetime
+import base64
 import json
+import logging
+import os
+import tempfile
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
-from app.stt import WhisperSTT, ClinicalSpeechParser
-from app.tts import TTSManager, ClinicalResponseFormatter
-from app.ehr import FHIRClient
-from app.nim_client import ChiefModelClient, FallbackModelClient
-from app.config import Config
+from .audit import log_voice_session
+from .clients import nim, ollama
+from .config import cfg
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger("HC01.voice")
 
+
+# ─── STT: faster-whisper with lazy loading ───────────────────────────────────
+
+_stt_model = None
+_stt_lock  = asyncio.Lock()
+
+
+async def _get_stt_model():
+    global _stt_model
+    if _stt_model is not None:
+        return _stt_model
+    async with _stt_lock:
+        if _stt_model is not None:
+            return _stt_model
+        try:
+            from faster_whisper import WhisperModel
+            device    = cfg.STT_DEVICE if cfg.STT_DEVICE == "cpu" else "auto"
+            ctype     = "float16" if device != "cpu" else "int8"
+            log.info("Loading faster-whisper %s on %s…", cfg.STT_MODEL, device)
+            _stt_model = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: WhisperModel(cfg.STT_MODEL, device=device, compute_type=ctype),
+            )
+            log.info("faster-whisper loaded")
+        except Exception as exc:
+            log.warning("faster-whisper not available: %s", exc)
+            _stt_model = None
+    return _stt_model
+
+
+async def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
+    """
+    Transcribe audio bytes to text using faster-whisper.
+    Falls back to None if model unavailable.
+    """
+    model = await _get_stt_model()
+    if model is None:
+        return None
+
+    suffix = ".wav"  # accept WAV/WebM/etc — faster-whisper handles most formats
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp_path = tmp.name
+        tmp.write(audio_bytes)
+
+    try:
+        segments, info = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: model.transcribe(
+                tmp_path,
+                language=cfg.STT_LANGUAGE,
+                beam_size=5,
+                vad_filter=True,          # removes silence
+                word_timestamps=False,    # faster without word timestamps
+            ),
+        )
+        text = " ".join(seg.text for seg in segments).strip()
+        log.info("STT: %.1fs audio → %d chars", info.duration, len(text))
+        return text if text else None
+    except Exception as exc:
+        log.error("STT transcription failed: %s", exc)
+        return None
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+# ─── TTS: pyttsx3 or system synthesis ─────────────────────────────────────────
+
+_tts_lock = asyncio.Lock()
+
+
+async def synthesize_speech(
+    text: str,
+    voice: str = "female",
+    speed: float = 1.0,
+) -> Optional[bytes]:
+    """
+    Synthesize text to WAV bytes.
+    Tries: Kokoro → pyttsx3 → None (text-only fallback).
+    """
+    async with _tts_lock:
+        # ── Try Kokoro ────────────────────────────────────────────────────
+        try:
+            from kokoro import generate as kokoro_generate  # type: ignore
+            voice_id = "af" if "female" in voice else "am"
+            audio, sample_rate = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: kokoro_generate(text, voice=voice_id, speed=speed),
+            )
+            # Convert numpy array to WAV bytes
+            import io, wave, numpy as np
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)  # 16-bit
+                wf.setframerate(sample_rate)
+                pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+                wf.writeframes(pcm.tobytes())
+            return buf.getvalue()
+        except ImportError:
+            pass  # Kokoro not installed
+        except Exception as exc:
+            log.warning("Kokoro TTS failed: %s", exc)
+
+        # ── Try pyttsx3 ───────────────────────────────────────────────────
+        try:
+            import pyttsx3  # type: ignore
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            def _synth():
+                engine = pyttsx3.init()
+                rate   = int(engine.getProperty("rate") * speed)
+                engine.setProperty("rate", rate)
+                voices = engine.getProperty("voices")
+                if voices:
+                    # Pick female/male voice
+                    for v in voices:
+                        if "female" in v.name.lower() and "female" in voice:
+                            engine.setProperty("voice", v.id)
+                            break
+                engine.save_to_file(text, tmp_path)
+                engine.runAndWait()
+
+            await asyncio.get_event_loop().run_in_executor(None, _synth)
+            with open(tmp_path, "rb") as fh:
+                audio_bytes = fh.read()
+            os.unlink(tmp_path)
+            return audio_bytes if audio_bytes else None
+        except ImportError:
+            pass
+        except Exception as exc:
+            log.warning("pyttsx3 TTS failed: %s", exc)
+
+    log.info("No TTS engine available — returning text-only response")
+    return None
+
+
+def _clinical_tts_text(full_response: str) -> str:
+    """
+    Extract the most important clinical snippet for voice (≤200 words).
+    Prefers SHIFT HANDOVER BRIEF, then CLINICAL ASSESSMENT, then first 200 words.
+    """
+    import re
+    for section in ("SHIFT HANDOVER BRIEF", "CLINICAL ASSESSMENT"):
+        m = re.search(rf"{section}[^:]*:\s*([\s\S]+?)(?:\n\n|\n[A-Z]|\Z)", full_response, re.I)
+        if m:
+            text = m.group(1).strip()
+            words = text.split()
+            return " ".join(words[:200])
+    words = full_response.split()
+    return " ".join(words[:200])
+
+
+# ─── Session management ───────────────────────────────────────────────────────
 
 @dataclass
 class VoiceMessage:
-    """Voice message in conversation"""
-    role: str  # "user" or "assistant"
+    role:    str      # "user" | "assistant"
     content: str
-    audio_bytes: Optional[bytes] = None
-    timestamp: datetime = None
-    metadata: Dict[str, Any] = None
-    
-    def __post_init__(self):
-        if self.timestamp is None:
-            self.timestamp = datetime.now()
-        if self.metadata is None:
-            self.metadata = {}
+    ts:      float = field(default_factory=time.time)
 
 
 @dataclass
 class VoiceSession:
-    """Voice session context"""
     session_id: str
-    patient_id: Optional[str] = None
-    clinician_id: Optional[str] = None
-    messages: List[VoiceMessage] = None
-    context: Dict[str, Any] = None
-    created_at: datetime = None
-    updated_at: datetime = None
-    
-    def __post_init__(self):
-        if self.messages is None:
-            self.messages = []
-        if self.context is None:
-            self.context = {}
-        if self.created_at is None:
-            self.created_at = datetime.now()
-        if self.updated_at is None:
-            self.updated_at = datetime.now()
+    patient_id: Optional[str]   = None
+    messages:   List[VoiceMessage] = field(default_factory=list)
+    context:    Dict[str, Any]  = field(default_factory=dict)
+    created_at: float = field(default_factory=time.time)
+
+    def add(self, role: str, content: str) -> None:
+        self.messages.append(VoiceMessage(role, content))
+
+    def to_llm_history(self, max_turns: int = 6) -> List[Dict]:
+        msgs = self.messages[-max_turns * 2:]
+        return [{"role": m.role, "content": m.content} for m in msgs]
 
 
-class VoiceWorkflowEngine:
-    """Orchestrates complete voice-driven clinical workflows"""
-    
-    def __init__(
-        self,
-        fhir_server_url: Optional[str] = None,
-        fhir_client_id: Optional[str] = None,
-        fhir_client_secret: Optional[str] = None,
-        fhir_oauth_url: Optional[str] = None,
-        use_chief_model: bool = True,
-    ):
-        """Initialize Voice Workflow Engine
-        
-        Args:
-            fhir_server_url: FHIR server URL
-            fhir_client_id: OAuth client ID
-            fhir_client_secret: OAuth client secret
-            fhir_oauth_url: OAuth token endpoint
-            use_chief_model: Use Chief model (True) or Fallback model (False)
-        """
-        self.stt = WhisperSTT(model_name="base")
-        self.tts = TTSManager(preferred_engine="kokoro")
-        
-        # Initialize EHR client if credentials provided
-        self.ehr = None
-        if fhir_server_url:
-            self.ehr = FHIRClient(
-                server_url=fhir_server_url,
-                client_id=fhir_client_id,
-                client_secret=fhir_client_secret,
-                oauth_url=fhir_oauth_url,
-            )
-        
-        # Initialize clinical AI models
-        if use_chief_model:
-            self.ai_model = ChiefModelClient()
-        else:
-            self.ai_model = FallbackModelClient()
-        
-        self.use_chief_model = use_chief_model
-        
-        # Session management
-        self.sessions: Dict[str, VoiceSession] = {}
-        self.callbacks: Dict[str, List[Callable]] = {
-            "on_speech_started": [],
-            "on_transcription": [],
-            "on_ehr_loaded": [],
-            "on_analysis_started": [],
-            "on_analysis_complete": [],
-            "on_tts_started": [],
-            "on_response_ready": [],
-        }
-        
-        logger.info("Voice Workflow Engine initialized")
-    
-    def register_callback(self, event: str, callback: Callable):
-        """Register event callback
-        
-        Args:
-            event: Event name
-            callback: Async callback function
-        """
-        if event in self.callbacks:
-            self.callbacks[event].append(callback)
-    
-    async def _trigger_event(self, event: str, data: Any = None):
-        """Trigger event callbacks"""
-        if event in self.callbacks:
-            tasks = [
-                callback(data) if asyncio.iscoroutinefunction(callback)
-                else callback(data)
-                for callback in self.callbacks[event]
-            ]
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-    
-    def create_session(
-        self,
-        session_id: str,
-        patient_id: Optional[str] = None,
-        clinician_id: Optional[str] = None,
-    ) -> VoiceSession:
-        """Create new voice session
-        
-        Args:
-            session_id: Unique session identifier
-            patient_id: Optional patient identifier
-            clinician_id: Optional clinician identifier
-            
-        Returns:
-            VoiceSession
-        """
-        session = VoiceSession(
-            session_id=session_id,
-            patient_id=patient_id,
-            clinician_id=clinician_id,
-        )
-        self.sessions[session_id] = session
-        logger.info(f"Created session {session_id}")
-        return session
-    
-    async def process_voice_input(
-        self,
-        session_id: str,
-        audio_bytes: bytes,
-    ) -> Dict[str, Any]:
-        """Process voice input and generate voice response
-        
-        Args:
-            session_id: Session ID
-            audio_bytes: Raw audio bytes
-            
-        Returns:
-            Response with transcription, analysis, and audio output
-        """
-        session = self.sessions.get(session_id)
-        if not session:
-            raise ValueError(f"Session {session_id} not found")
-        
-        logger.info(f"Processing voice input for session {session_id}")
-        await self._trigger_event("on_speech_started", {"session_id": session_id})
-        
+_sessions: Dict[str, VoiceSession] = {}
+_sessions_lock = asyncio.Lock()
+
+
+async def get_or_create_session(
+    session_id: Optional[str] = None,
+    patient_id: Optional[str] = None,
+) -> VoiceSession:
+    async with _sessions_lock:
+        if session_id and session_id in _sessions:
+            return _sessions[session_id]
+        sid = session_id or str(uuid.uuid4())
+        s   = VoiceSession(session_id=sid, patient_id=patient_id)
+        _sessions[sid] = s
+        log_voice_session(sid, "start", patient_id)
+        return s
+
+
+async def close_session(session_id: str) -> None:
+    async with _sessions_lock:
+        if session_id in _sessions:
+            s = _sessions.pop(session_id)
+            log_voice_session(session_id, "end", s.patient_id,
+                              {"messages": len(s.messages)})
+
+
+# ─── Intent recognition + clinical query ────────────────────────────────────
+
+_SYSTEM_PROMPT = """You are HC01, an AI clinical assistant for an ICU ward.
+You have access to real-time patient data, lab trends, medication safety checks, and clinical guidelines.
+Answer CONCISELY — your responses will be read aloud to a clinician.
+Limit responses to 3-5 sentences unless asked for detail.
+Always cite specific values (SOFA score, lab values, alert levels) when available.
+If patient data is available in context, use it. If not, ask the clinician to specify a patient."""
+
+
+async def voice_query(
+    session: VoiceSession,
+    user_text: str,
+    patient_data_json: Optional[str] = None,
+    nim_key: Optional[str] = None,
+) -> str:
+    """
+    Process a voice query and return a clinical text response.
+    Optionally includes patient data as context.
+    """
+    from .audit import log_ai_inference
+
+    context_block = ""
+    if patient_data_json:
+        context_block = f"\n\n[PATIENT CONTEXT]\n{patient_data_json[:2000]}\n[END CONTEXT]\n"
+
+    session.add("user", user_text)
+
+    system = _SYSTEM_PROMPT + context_block
+    messages = [{"role": "system", "content": system}] + session.to_llm_history()
+
+    key = nim_key or cfg.nim_key("fallback") or cfg.nim_key("chief")
+    response = "[HC01 voice model unavailable]"
+
+    if key:
         try:
-            # Step 1: Speech-to-Text
-            logger.info("Step 1: Transcribing audio...")
-            transcription = await self.stt.transcribe_bytes(audio_bytes)
-            user_text = transcription["text"]
-            
-            logger.info(f"Transcribed: {user_text[:100]}...")
-            await self._trigger_event("on_transcription", {
-                "session_id": session_id,
-                "text": user_text,
-            })
-            
-            # Step 2: Extract clinical context
-            logger.info("Step 2: Extracting clinical context...")
-            clinical_context = ClinicalSpeechParser.extract_clinical_context(user_text)
-            expanded_text = ClinicalSpeechParser.expand_abbreviations(user_text)
-            
-            session.context.update({
-                "last_query": expanded_text,
-                "clinical_context": clinical_context,
-                "query_type": clinical_context["query_type"],
-                "urgency": clinical_context["urgency"],
-            })
-            
-            # Step 3: Load EHR data if patient specified
-            patient_data = None
-            if session.patient_id and self.ehr:
-                logger.info("Step 3: Loading EHR data...")
+            response = await nim.chat(
+                cfg.FALLBACK_MODEL,
+                messages,
+                key,
+                max_tokens=400,
+                temperature=0.3,
+            )
+            log_ai_inference(
+                session.patient_id or "unknown",
+                cfg.FALLBACK_MODEL,
+                "voice_response",
+            )
+        except Exception as exc:
+            log.error("Voice NIM query failed: %s", exc)
+            # Try Ollama as fallback
+            try:
+                if await ollama.is_online():
+                    response = await ollama.chat(cfg.NOTE_MODEL, messages, max_tokens=300)
+            except Exception as exc2:
+                log.error("Voice Ollama fallback failed: %s", exc2)
+    else:
+        try:
+            if await ollama.is_online():
+                response = await ollama.chat(cfg.NOTE_MODEL, messages, max_tokens=300)
+        except Exception as exc:
+            log.error("Voice Ollama query failed: %s", exc)
+
+    session.add("assistant", response)
+    log_voice_session(session.session_id, "response", session.patient_id,
+                      {"chars": len(response)})
+    return response
+
+
+# ─── WebSocket voice handler (used by main.py) ───────────────────────────────
+
+async def handle_voice_websocket(
+    websocket,
+    session_id: Optional[str] = None,
+    nim_key: Optional[str] = None,
+) -> None:
+    """
+    Full voice WebSocket handler.
+
+    Client → Server messages:
+      {"type": "audio",  "data": "<base64 WAV/WebM>", "patient_id": "..."}
+      {"type": "text",   "content": "...",             "patient_id": "..."}
+      {"type": "ping"}
+
+    Server → Client messages:
+      {"type": "session_id",   "session_id": "..."}
+      {"type": "transcript",   "text": "..."}
+      {"type": "thinking"}
+      {"type": "response_text","text": "..."}
+      {"type": "audio",        "data": "<base64 WAV>", "available": true/false}
+      {"type": "error",        "message": "..."}
+    """
+    from fastapi import WebSocketDisconnect
+
+    sid = session_id or str(uuid.uuid4())
+    await websocket.send_json({"type": "session_id", "session_id": sid})
+    log.info("Voice WS session %s started", sid)
+
+    session: Optional[VoiceSession] = None
+
+    try:
+        while True:
+            raw = await websocket.receive_json()
+            msg_type   = raw.get("type", "")
+            patient_id = raw.get("patient_id")
+
+            if msg_type == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+
+            if session is None:
+                session = await get_or_create_session(sid, patient_id)
+
+            # Resolve patient context for the session
+            patient_ctx_json: Optional[str] = None
+            patient_data_raw = raw.get("patient_data")  # Client can send PatientData
+            if patient_data_raw:
+                patient_ctx_json = json.dumps(patient_data_raw) if isinstance(patient_data_raw, dict) else str(patient_data_raw)
+                session.context["patient_data"] = patient_ctx_json
+
+            # Use cached patient if not re-sent
+            if not patient_ctx_json and session.context.get("patient_data"):
+                patient_ctx_json = session.context["patient_data"]
+
+            # ── Audio input ────────────────────────────────────────────
+            if msg_type == "audio":
+                audio_b64 = raw.get("data", "")
+                if not audio_b64:
+                    await websocket.send_json({"type": "error", "message": "No audio data"})
+                    continue
+
                 try:
-                    patient_data = await self.ehr.get_complete_patient_record(
-                        session.patient_id
-                    )
-                    session.context["ehr_data"] = patient_data
-                    
-                    logger.info(f"Loaded EHR data for patient {session.patient_id}")
-                    await self._trigger_event("on_ehr_loaded", {
-                        "session_id": session_id,
-                        "patient_id": session.patient_id,
+                    audio_bytes = base64.b64decode(audio_b64)
+                except Exception:
+                    await websocket.send_json({"type": "error", "message": "Invalid base64 audio"})
+                    continue
+
+                # STT
+                transcript = await transcribe_audio(audio_bytes)
+                if not transcript:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Could not transcribe audio. Please check microphone or use text input.",
                     })
-                except Exception as e:
-                    logger.error(f"EHR data load failed: {e}")
-                    patient_data = None
-            
-            # Step 4: Prepare AI analysis input
-            logger.info("Step 4: Preparing AI analysis...")
-            await self._trigger_event("on_analysis_started", {
-                "session_id": session_id,
-                "model": "chief" if self.use_chief_model else "fallback",
-            })
-            
-            # Build clinical context for AI
-            ehr_summary = self._summarize_ehr_data(patient_data) if patient_data else ""
-            ai_prompt = self._build_ai_prompt(
-                user_query=expanded_text,
-                clinical_context=clinical_context,
-                ehr_summary=ehr_summary,
-                session_context=session.context,
-            )
-            
-            # Step 5: Clinical AI Analysis
-            logger.info("Step 5: Running clinical analysis...")
-            if self.use_chief_model:
-                # Use Chief model with extended thinking
-                ai_response = await self.ai_model.reason(
-                    prompt=ai_prompt,
-                    reasoning_budget=8000,
-                    max_tokens=2000,
-                )
+                    continue
+
+                await websocket.send_json({"type": "transcript", "text": transcript})
+                log_voice_session(sid, "transcript", patient_id, {"chars": len(transcript)})
+
+                # LLM query
+                await websocket.send_json({"type": "thinking"})
+                response_text = await voice_query(session, transcript, patient_ctx_json, nim_key)
+                await websocket.send_json({"type": "response_text", "text": response_text})
+
+                # TTS
+                tts_text  = _clinical_tts_text(response_text)
+                audio_out = await synthesize_speech(tts_text)
+                if audio_out:
+                    await websocket.send_json({
+                        "type":      "audio",
+                        "data":      base64.b64encode(audio_out).decode(),
+                        "available": True,
+                    })
+                else:
+                    await websocket.send_json({"type": "audio", "available": False,
+                                               "message": "TTS unavailable — text response only"})
+
+            # ── Text input ─────────────────────────────────────────────
+            elif msg_type == "text":
+                content = raw.get("content", "").strip()
+                if not content:
+                    await websocket.send_json({"type": "error", "message": "Empty text"})
+                    continue
+
+                await websocket.send_json({"type": "thinking"})
+                response_text = await voice_query(session, content, patient_ctx_json, nim_key)
+                await websocket.send_json({"type": "response_text", "text": response_text})
+
+                tts_text  = _clinical_tts_text(response_text)
+                audio_out = await synthesize_speech(tts_text)
+                if audio_out:
+                    await websocket.send_json({
+                        "type":      "audio",
+                        "data":      base64.b64encode(audio_out).decode(),
+                        "available": True,
+                    })
+                else:
+                    await websocket.send_json({"type": "audio", "available": False})
+
             else:
-                # Use Fallback model for quick response
-                ai_response = await self.ai_model.document(
-                    prompt=ai_prompt,
-                    max_tokens=1024,
-                )
-            
-            logger.info(f"Analysis complete: {ai_response[:100]}...")
-            await self._trigger_event("on_analysis_complete", {
-                "session_id": session_id,
-                "response_length": len(ai_response),
-            })
-            
-            # Step 6: Format response for speech
-            logger.info("Step 6: Formatting response for speech...")
-            speech_text = ClinicalResponseFormatter.prepare_for_speech(ai_response)
-            
-            # Step 7: Text-to-Speech
-            logger.info("Step 7: Synthesizing speech...")
-            await self._trigger_event("on_tts_started", {
-                "session_id": session_id,
-                "text_length": len(speech_text),
-            })
-            
-            response_audio = await self.tts.synthesize(
-                speech_text,
-                speed=1.0,
-            )
-            
-            logger.info(f"Speech synthesis complete: {len(response_audio)} bytes")
-            await self._trigger_event("on_response_ready", {
-                "session_id": session_id,
-                "audio_size": len(response_audio),
-            })
-            
-            # Step 8: Store in session history
-            user_msg = VoiceMessage(
-                role="user",
-                content=user_text,
-                audio_bytes=audio_bytes,
-                metadata=clinical_context,
-            )
-            assistant_msg = VoiceMessage(
-                role="assistant",
-                content=ai_response,
-                audio_bytes=response_audio,
-                metadata={"model": "chief" if self.use_chief_model else "fallback"},
-            )
-            
-            session.messages.append(user_msg)
-            session.messages.append(assistant_msg)
-            session.updated_at = datetime.now()
-            
-            return {
-                "success": True,
-                "session_id": session_id,
-                "user_input": user_text,
-                "user_context": clinical_context,
-                "ai_response_text": ai_response,
-                "response_audio_bytes": response_audio,
-                "response_audio_length_seconds": len(response_audio) / (24000 * 2),  # Kokoro is 24kHz 16-bit
-                "model_used": "chief" if self.use_chief_model else "fallback",
-                "processing_complete": True,
-            }
-        
-        except Exception as e:
-            logger.error(f"Voice processing error: {e}", exc_info=True)
-            return {
-                "success": False,
-                "session_id": session_id,
-                "error": str(e),
-            }
-    
-    def _summarize_ehr_data(self, patient_data: Dict[str, Any]) -> str:
-        """Summarize EHR data for AI context
-        
-        Args:
-            patient_data: FHIR patient record
-            
-        Returns:
-            Text summary of key EHR data
-        """
-        lines = []
-        
+                await websocket.send_json({
+                    "type": "error",
+                    "message": f"Unknown message type: {msg_type!r}",
+                })
+
+    except WebSocketDisconnect:
+        log.info("Voice WS session %s disconnected", sid)
+    except Exception as exc:
+        log.exception("Voice WS error in session %s", sid)
         try:
-            # Patient demographics
-            patient = patient_data.get("patient", {})
-            if patient:
-                name = self._extract_name(patient)
-                if name:
-                    lines.append(f"Patient: {name}")
-            
-            # Active conditions
-            conditions = patient_data.get("conditions", [])
-            if conditions:
-                condition_names = [
-                    c.get("code", {}).get("coding", [{}])[0].get("display", "Unknown")
-                    for c in conditions[:5]
-                ]
-                lines.append(f"Active conditions: {', '.join(condition_names)}")
-            
-            # Current medications
-            medications = patient_data.get("medications", [])
-            if medications:
-                med_names = [
-                    m.get("medicationCodeableConcept", {}).get("coding", [{}])[0].get("display")
-                    or m.get("medicationReference", {}).get("display", "Unknown")
-                    for m in medications[:5]
-                ]
-                lines.append(f"Current medications: {', '.join(med_names)}")
-            
-            # Recent vitals
-            observations = patient_data.get("observations", [])
-            if observations:
-                vitals = []
-                for obs in observations[:10]:
-                    code = obs.get("code", {}).get("coding", [{}])[0].get("display", "")
-                    value = obs.get("valueQuantity", {}).get("value", "")
-                    if value:
-                        vitals.append(f"{code}: {value}")
-                if vitals:
-                    lines.append(f"Recent vitals: {', '.join(vitals)}")
-            
-            # Allergies
-            allergies = patient_data.get("allergies", [])
-            if allergies:
-                allergy_names = [
-                    a.get("code", {}).get("coding", [{}])[0].get("display", "Unknown")
-                    for a in allergies
-                ]
-                lines.append(f"Allergies: {', '.join(allergy_names)}")
-        
-        except Exception as e:
-            logger.error(f"Error summarizing EHR data: {e}")
-        
-        return "\n".join(lines)
-    
-    @staticmethod
-    def _extract_name(patient: Dict[str, Any]) -> str:
-        """Extract patient name from FHIR resource"""
-        names = patient.get("name", [])
-        if names:
-            name = names[0]
-            given = " ".join(name.get("given", []))
-            family = name.get("family", "")
-            return f"{given} {family}".strip()
-        return ""
-    
-    def _build_ai_prompt(
-        self,
-        user_query: str,
-        clinical_context: Dict[str, Any],
-        ehr_summary: str,
-        session_context: Dict[str, Any],
-    ) -> str:
-        """Build comprehensive AI prompt from all context
-        
-        Args:
-            user_query: User's query text
-            clinical_context: Extracted clinical context
-            ehr_summary: EHR data summary
-            session_context: Session-level context
-            
-        Returns:
-            Formatted prompt for clinical AI
-        """
-        prompt = f"""You are an expert clinical decision support system. A clinician is asking about a patient.
-
-## Clinical Conversation History
-{chr(10).join([f"- {msg.role.upper()}: {msg.content[:100]}" for msg in self.sessions.get(
-    list(self.sessions.keys())[0], VoiceSession(session_id="")
-).messages[-4:] if hasattr(self.sessions, 'get')])}
-
-## Current Query
-{user_query}
-
-## Query Context
-- Type: {clinical_context.get('query_type', 'general')}
-- Urgency: {clinical_context.get('urgency', 'routine')}
-
-## Patient Clinical Information
-{ehr_summary if ehr_summary else "No EHR data available - using knowledge-based analysis"}
-
-## Your Response
-Provide a clinically accurate, concise response:
-1. Direct answer to the clinician's question
-2. Key clinical findings relevant to the query
-3. Risk assessment (if applicable)
-4. Recommended next steps or monitoring
-5. Clinical guidelines cited (if applicable)
-
-Be direct and professional. Use standard medical terminology. Highlight critical findings.
-"""
-        return prompt
-    
-    def get_session(self, session_id: str) -> Optional[VoiceSession]:
-        """Get session by ID"""
-        return self.sessions.get(session_id)
-    
-    def list_sessions(self) -> List[Dict[str, Any]]:
-        """List all active sessions"""
-        return [
-            {
-                "session_id": s.session_id,
-                "patient_id": s.patient_id,
-                "clinician_id": s.clinician_id,
-                "messages": len(s.messages),
-                "created_at": s.created_at.isoformat(),
-                "updated_at": s.updated_at.isoformat(),
-            }
-            for s in self.sessions.values()
-        ]
-
-
-# Example usage
-if __name__ == "__main__":
-    async def demo_voice_workflow():
-        """Demo voice workflow"""
-        # Initialize engine (without EHR for this demo)
-        engine = VoiceWorkflowEngine(
-            use_chief_model=True,
-        )
-        
-        # Create session
-        session = engine.create_session(
-            session_id="demo_123",
-            patient_id=None,  # No real patient
-        )
-        
-        print("Voice Workflow Engine Demo")
-        print("=" * 50)
-        print(f"Session created: {session.session_id}")
-        print(f"Status: Ready to process voice input")
-        print("=" * 50)
-    
-    asyncio.run(demo_voice_workflow())
+            await websocket.send_json({"type": "error", "message": str(exc)})
+        except Exception:
+            pass
+    finally:
+        if session:
+            await close_session(sid)

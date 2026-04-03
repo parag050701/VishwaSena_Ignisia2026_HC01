@@ -1,6 +1,28 @@
+# Core API
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 httpx>=0.27.0
-numpy>=1.26.0
-pydantic>=2.7.0
 websockets>=12.0
+pydantic>=2.7.0
+
+# Data processing
+numpy>=1.26.0
+pandas>=2.0.0
+
+# Environment & config
+python-dotenv>=1.0.0
+gradio_client>=1.0.0
+
+# NVIDIA NIM via OpenAI SDK
+openai>=1.30.0
+
+# RAG backend (backend/ server)
+sentence-transformers>=2.7.0
+chromadb>=0.5.0
+torch>=2.0.0
+
+# Optional: voice features (uncomment to enable)
+# faster-whisper>=1.0.0
+# TTS>=0.22.0
+# soundfile>=0.12.0
+# sounddevice>=0.4.6

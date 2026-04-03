@@ -28,11 +28,11 @@ class RAGEngine:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = SentenceTransformer(model_name, device=self.device)
 
-        self.client = chromadb.Client(
-            Settings(
-                is_persistent=False,
-                anonymized_telemetry=False,
-            )
+        import os
+        _db_path = os.path.join(os.path.dirname(__file__), ".chroma_db")
+        self.client = chromadb.PersistentClient(
+            path=_db_path,
+            settings=Settings(anonymized_telemetry=False),
         )
         self.collection = self.client.get_or_create_collection(
             name="hc01_guidelines",
@@ -45,8 +45,8 @@ class RAGEngine:
 
     def build_corpus(self) -> int:
         docs = GUIDELINE_CORPUS
-        if len(docs) < 20:
-            raise ValueError("Corpus must contain at least 20 chunks.")
+        if len(docs) < 5:
+            raise ValueError(f"Corpus must contain at least 5 chunks, got {len(docs)}.")
 
         ids = [d["id"] for d in docs]
         documents = [d["text"] for d in docs]

@@ -1,75 +1,112 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from project root
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_env_path)
+
 
 class Config:
     # ═══════════════════════════════════════════════════════════
     # CLINICAL AI MODELS
     # ═══════════════════════════════════════════════════════════
-    OLLAMA_BASE = "http://localhost:11434"
-    NIM_BASE = "https://integrate.api.nvidia.com/v1"
+    OLLAMA_BASE: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    NIM_BASE: str = "https://integrate.api.nvidia.com/v1"
 
-    NOTE_MODEL = "qwen2.5:7b-q4_k_m"
-    RAG_EXPLAIN_MODEL = "qwen2.5:7b-q4_k_m"
-    EMBED_MODEL = "bge-m3"
+    NOTE_MODEL: str = os.getenv("NOTE_MODEL", "qwen3:4b")
+    RAG_EXPLAIN_MODEL: str = os.getenv("RAG_EXPLAIN_MODEL", "qwen3:4b")
+    EMBED_MODEL: str = os.getenv("EMBED_MODEL", "nomic-embed-text:latest")
 
-    CHIEF_MODEL = "nvidia/nemotron-3-super-120b-a12b"
-    FALLBACK_MODEL = "qwen/qwen2.5-7b-instruct"
+    CHIEF_MODEL: str = os.getenv(
+        "CHIEF_MODEL", "nvidia/nemotron-3-super-120b-a12b"
+    )
+    FALLBACK_MODEL: str = os.getenv(
+        "FALLBACK_MODEL", "qwen/qwen2.5-7b-instruct"
+    )
 
-    # NIM API Keys (set via environment or config)
-    NIM_API_KEY_CHIEF = os.getenv("NIM_API_KEY_CHIEF", "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")
-    NIM_API_KEY_FALLBACK = os.getenv("NIM_API_KEY_FALLBACK", "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")
+    # API keys — never hardcoded; must be set in .env
+    NIM_API_KEY_CHIEF: str = os.getenv("NIM_API_KEY_CHIEF", "")
+    NIM_API_KEY_FALLBACK: str = os.getenv("NIM_API_KEY_FALLBACK", "")
 
-    OUTLIER_Z = 2.5
-    TOP_K_GUIDELINES = 5
-    OLLAMA_TIMEOUT = 120.0
-    NIM_TIMEOUT = 90.0
-    
     # ═══════════════════════════════════════════════════════════
-    # VOICE SETTINGS (NEW)
+    # PIPELINE TUNING
     # ═══════════════════════════════════════════════════════════
-    # Speech-to-Text (STT) Configuration
-    STT_MODEL = os.getenv("STT_MODEL", "base")  # tiny, base, small, medium, large
-    STT_DEVICE = os.getenv("STT_DEVICE", "cuda")  # cuda or cpu
-    STT_LANGUAGE = os.getenv("STT_LANGUAGE", "en")
-    STT_CHUNK_SIZE = int(os.getenv("STT_CHUNK_SIZE", "30"))  # seconds
-    
-    # Text-to-Speech (TTS) Configuration
-    TTS_ENGINE = os.getenv("TTS_ENGINE", "kokoro")  # kokoro or coqui
-    TTS_VOICE = os.getenv("TTS_VOICE", "female")  # female or male
-    TTS_SPEED = float(os.getenv("TTS_SPEED", "1.0"))  # 0.5-2.0
-    TTS_DEVICE = os.getenv("TTS_DEVICE", "cuda")  # cuda or cpu
-    TTS_SAMPLE_RATE = 24000  # Hz (Kokoro native)
-    
+    OUTLIER_Z: float = float(os.getenv("OUTLIER_Z", "2.5"))
+    TOP_K_GUIDELINES: int = int(os.getenv("TOP_K_GUIDELINES", "5"))
+    OLLAMA_TIMEOUT: float = float(os.getenv("OLLAMA_TIMEOUT", "180.0"))
+    NIM_TIMEOUT: float = float(os.getenv("NIM_TIMEOUT", "45.0"))
+    NIM_RETRY_ATTEMPTS: int = int(os.getenv("NIM_RETRY_ATTEMPTS", "1"))
+
+    # Optional LLM council consult (Machine Theory / Andrej Karpathy project)
+    ENABLE_LLM_COUNCIL: bool = os.getenv("ENABLE_LLM_COUNCIL", "false").lower() == "true"
+    LLM_COUNCIL_SPACE: str = os.getenv("LLM_COUNCIL_SPACE", "burtenshaw/karpathy-llm-council")
+    LLM_COUNCIL_TIMEOUT: float = float(os.getenv("LLM_COUNCIL_TIMEOUT", "180.0"))
+
     # ═══════════════════════════════════════════════════════════
-    # EHR/FHIR CONFIGURATION (NEW)
+    # VOICE SETTINGS
     # ═══════════════════════════════════════════════════════════
-    FHIR_SERVER_URL = os.getenv("FHIR_SERVER_URL", "")
-    FHIR_CLIENT_ID = os.getenv("FHIR_CLIENT_ID", "")
-    FHIR_CLIENT_SECRET = os.getenv("FHIR_CLIENT_SECRET", "")
-    FHIR_OAUTH_URL = os.getenv("FHIR_OAUTH_URL", "")
-    FHIR_SCOPE = os.getenv("FHIR_SCOPE", "user/Patient.read user/Observation.read user/Encounter.read")
-    FHIR_TIMEOUT = 30  # seconds
-    FHIR_CACHE_TTL = 300  # 5 minutes
-    
+    STT_MODEL: str = os.getenv("STT_MODEL", "base")
+    STT_DEVICE: str = os.getenv("STT_DEVICE", "cuda")
+    STT_LANGUAGE: str = os.getenv("STT_LANGUAGE", "en")
+    STT_CHUNK_SIZE: int = int(os.getenv("STT_CHUNK_SIZE", "30"))
+
+    TTS_ENGINE: str = os.getenv("TTS_ENGINE", "kokoro")
+    TTS_VOICE: str = os.getenv("TTS_VOICE", "female")
+    TTS_SPEED: float = float(os.getenv("TTS_SPEED", "1.0"))
+    TTS_DEVICE: str = os.getenv("TTS_DEVICE", "cuda")
+    TTS_SAMPLE_RATE: int = 24000
+
+    # ═══════════════════════════════════════════════════════════
+    # EHR / FHIR
+    # ═══════════════════════════════════════════════════════════
+    FHIR_SERVER_URL: str = os.getenv("FHIR_SERVER_URL", "")
+    FHIR_CLIENT_ID: str = os.getenv("FHIR_CLIENT_ID", "")
+    FHIR_CLIENT_SECRET: str = os.getenv("FHIR_CLIENT_SECRET", "")
+    FHIR_OAUTH_URL: str = os.getenv("FHIR_OAUTH_URL", "")
+    FHIR_SCOPE: str = os.getenv(
+        "FHIR_SCOPE",
+        "user/Patient.read user/Observation.read user/Encounter.read",
+    )
+    FHIR_TIMEOUT: int = int(os.getenv("FHIR_TIMEOUT", "30"))
+    FHIR_CACHE_TTL: int = int(os.getenv("FHIR_CACHE_TTL", "300"))
+
     # ═══════════════════════════════════════════════════════════
     # DATA PATHS
     # ═══════════════════════════════════════════════════════════
-    DATA_DIR = os.getenv("HC01_DATA_DIR", ".")
-    MIMIC_CSVS = {
-        "noteevents": os.path.join(DATA_DIR, "NOTEEVENTS.csv"),
-        "labevents": os.path.join(DATA_DIR, "LABEVENTS.csv"),
-        "d_labitems": os.path.join(DATA_DIR, "D_LABITEMS.csv"),
-        "icustays": os.path.join(DATA_DIR, "ICUSTAYS.csv"),
-        "patients": os.path.join(DATA_DIR, "PATIENTS.csv"),
-        "prescriptions": os.path.join(DATA_DIR, "PRESCRIPTIONS.csv"),
+    DATA_DIR: str = os.getenv("HC01_DATA_DIR", ".")
+    MIMIC_CSVS: dict = {
+        "noteevents":    os.path.join(os.getenv("HC01_DATA_DIR", "."), "NOTEEVENTS.csv"),
+        "labevents":     os.path.join(os.getenv("HC01_DATA_DIR", "."), "LABEVENTS.csv"),
+        "d_labitems":    os.path.join(os.getenv("HC01_DATA_DIR", "."), "D_LABITEMS.csv"),
+        "icustays":      os.path.join(os.getenv("HC01_DATA_DIR", "."), "ICUSTAYS.csv"),
+        "patients":      os.path.join(os.getenv("HC01_DATA_DIR", "."), "PATIENTS.csv"),
+        "prescriptions": os.path.join(os.getenv("HC01_DATA_DIR", "."), "PRESCRIPTIONS.csv"),
     }
-    
+
     # ═══════════════════════════════════════════════════════════
     # FEATURE FLAGS
     # ═══════════════════════════════════════════════════════════
-    ENABLE_VOICE = True  # Enable voice capabilities
-    ENABLE_EHR = bool(FHIR_SERVER_URL)  # Enable EHR only if configured
-    USE_CHIEF_MODEL_FOR_VOICE = True  # Use advanced reasoning for voice
-    DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+    ENABLE_VOICE: bool = os.getenv("ENABLE_VOICE", "true").lower() == "true"
+    ENABLE_EHR: bool = bool(os.getenv("FHIR_SERVER_URL", ""))
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+
+    def has_nim_key(self, key_type: str = "fallback") -> bool:
+        """Check if a NIM key is configured."""
+        if key_type == "chief":
+            return bool(self.NIM_API_KEY_CHIEF)
+        return bool(self.NIM_API_KEY_FALLBACK)
+
+    def nim_key(self, key_type: str = "fallback") -> str:
+        """Return the best available NIM key."""
+        if key_type == "chief" and self.NIM_API_KEY_CHIEF:
+            return self.NIM_API_KEY_CHIEF
+        if self.NIM_API_KEY_FALLBACK:
+            return self.NIM_API_KEY_FALLBACK
+        if self.NIM_API_KEY_CHIEF:
+            return self.NIM_API_KEY_CHIEF
+        return ""
 
 
 cfg = Config()
