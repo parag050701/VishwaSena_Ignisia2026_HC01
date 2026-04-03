@@ -46,42 +46,89 @@ async def _ollama_or_nim(ctx: AgentContext, messages: List[Dict], max_tokens: in
 
 # ─── Wave 1 agents ────────────────────────────────────────────────────────────
 
+_SYMPTOM_KW = [
+    "fever","chills","tachycardia","hypotension","confusion","altered","dyspnea","shortness of breath",
+    "oliguria","hypoxia","hypoxemia","pain","nausea","vomiting","sepsis","shock","acidosis",
+    "decreased urine","agitation","lethargy","distension","diarrhea","cough","wheeze",
+]
+_PROBLEM_KW = [
+    "sepsis","septic shock","ards","aki","pneumonia","uti","bacteremia","endocarditis",
+    "heart failure","respiratory failure","renal failure","liver failure","coagulopathy",
+    "meningitis","encephalopathy","pancreatitis","peritonitis","ileus",
+]
+_INFECTION_KW = [
+    "pneumonia","lung","uti","urinary","blood","bacteremia","skin","wound","catheter",
+    "line","abdomen","abdominal","gi tract","endocarditis","meningitis","cns",
+]
+_VITAL_KW = [
+    "tachycardia","bradycardia","hypotension","hypertension","fever","hypothermia",
+    "low bp","high bp","low heart rate","high heart rate","dropping","rising","falling",
+    "spo2","oxygen","gcs","confused","unresponsive",
+]
+
+
 async def agent_note_parser(ctx: AgentContext) -> None:
+    """Rule-based clinical note parser — no LLM, sub-second execution."""
     orch = "CLINICAL"
     await ctx.set_agent_status(orch, "NOTE_PARSER", "active")
     try:
-        notes_text = "\n\n".join(
-            f"[{n.get('time', '?')}] {n.get('author', '?')}: {n.get('text', '')}"
-            for n in (ctx.patient.notes or [])
-        )
-        if not notes_text.strip():
+        notes = ctx.patient.notes or []
+        if not notes:
             ctx.parsed_notes = {"raw": "No clinical notes available"}
             await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "NOTE_PARSER", "data": ctx.parsed_notes})
             await ctx.set_agent_status(orch, "NOTE_PARSER", "done")
             return
 
-        sys_prompt = (
-            "You are a clinical NLP agent. Parse ICU notes and return ONLY a JSON object: "
-            '{"symptoms":[],"medications_mentioned":[],"timeline_events":[{"time":"","event":""}],'
-            '"vital_concerns":[],"active_problems":[],"infection_sources":[]}. No preamble.'
-        )
-        messages = [
-            {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": f"Parse:\n\n{notes_text[:2000]}"},
-        ]
-        raw = await _ollama_or_nim(ctx, messages, max_tokens=700)
+        symptoms: list        = []
+        meds_mentioned: list  = []
+        timeline_events: list = []
+        vital_concerns: list  = []
+        active_problems: list = []
+        infection_sources: list = []
+        seen: set = set()
 
-        m = re.search(r'\{[\s\S]*\}', raw)
-        if m:
-            try:
-                ctx.parsed_notes = json.loads(m.group())
-                problems  = len(ctx.parsed_notes.get("active_problems", []))
-                symptoms  = len(ctx.parsed_notes.get("symptoms", []))
-                await ctx.log("NOTE_PARSER", f"Extracted {symptoms} symptoms, {problems} active problems", "info")
-            except json.JSONDecodeError:
-                ctx.parsed_notes = {"raw": raw[:800]}
-        else:
-            ctx.parsed_notes = {"raw": raw[:800]}
+        for note in notes:
+            txt  = note.get("text", "")
+            time = note.get("time", "?")
+            low  = txt.lower()
+
+            # timeline event per note
+            timeline_events.append({"time": time, "event": txt[:120]})
+
+            for kw in _SYMPTOM_KW:
+                if kw in low and kw not in seen:
+                    symptoms.append(kw)
+                    seen.add(kw)
+
+            for kw in _PROBLEM_KW:
+                if kw in low and kw not in seen:
+                    active_problems.append(kw)
+                    seen.add(kw)
+
+            for kw in _INFECTION_KW:
+                if kw in low and ("source" in low or "infection" in low or kw in low) and kw not in seen:
+                    infection_sources.append(kw)
+                    seen.add(kw)
+
+            for kw in _VITAL_KW:
+                if kw in low and kw not in seen:
+                    vital_concerns.append(kw)
+                    seen.add(kw)
+
+        # Medications from patient data (already structured)
+        meds_mentioned = list(ctx.patient.medications or [])
+
+        ctx.parsed_notes = {
+            "symptoms": symptoms,
+            "medications_mentioned": meds_mentioned,
+            "timeline_events": timeline_events,
+            "vital_concerns": vital_concerns,
+            "active_problems": active_problems,
+            "infection_sources": infection_sources,
+        }
+        await ctx.log("NOTE_PARSER",
+            f"Rule-based: {len(symptoms)} symptoms, {len(active_problems)} problems, {len(timeline_events)} events",
+            "info")
 
     except Exception as exc:
         log.exception("NOTE_PARSER error")
@@ -500,19 +547,17 @@ async def agent_semantic_retriever(ctx: AgentContext) -> List[Dict]:
         except Exception as exc:
             await ctx.log("SEMANTIC_RETRIEVER", f"Medical RAG DB unavailable ({exc}), falling back", "warn")
 
-        if data._guideline_embeddings and await ollama.is_online():
-            await ctx.log("SEMANTIC_RETRIEVER", "Computing bge-m3 query embedding…", "info")
-            try:
-                q_emb  = await ollama.embed(query)
-                scored = [
-                    {**g, "score": round(float(cosine_sim(q_emb, data._guideline_embeddings[i])), 4)}
-                    for i, g in enumerate(data.GUIDELINES)
-                ]
-                scored.sort(key=lambda x: x["score"], reverse=True)
-                retrieved = scored[:cfg.TOP_K_GUIDELINES]
-                await ctx.log("SEMANTIC_RETRIEVER", f"Semantic retrieval done. Top score: {retrieved[0]['score']}", "info")
-            except Exception as e:
-                await ctx.log("SEMANTIC_RETRIEVER", f"Embed failed ({e}), using keyword fallback", "warn")
+        # Pre-embedded guidelines + keyword query matching (no runtime embed call — avoids 50s+ latency)
+        if data._guideline_embeddings and not retrieved:
+            await ctx.log("SEMANTIC_RETRIEVER", "Using pre-embedded guidelines + keyword scoring…", "info")
+            lower = query.lower()
+            scored = [
+                {**g, "score": keyword_score(lower, g["keywords"]) + (0.1 if any(w in g["text"].lower() for w in lower.split()[:10]) else 0)}
+                for i, g in enumerate(data.GUIDELINES)
+            ]
+            scored.sort(key=lambda x: x["score"], reverse=True)
+            retrieved = scored[:cfg.TOP_K_GUIDELINES]
+            await ctx.log("SEMANTIC_RETRIEVER", f"Keyword retrieval done. Top score: {retrieved[0]['score']:.3f}", "info")
 
         if not retrieved:
             lower = query.lower()
@@ -814,7 +859,7 @@ SAFETY DISCLAIMER: This report is generated by an AI decision-support system (HC
         if not nim_key:
             raise RuntimeError("No NIM API key configured")
         await ctx.log("CHIEF_AGENT", "NIM Chief synthesis starting…", "info")
-        full_text = await nim.chat(cfg.CHIEF_MODEL, messages, nim_key, max_tokens=1800, on_chunk=on_chunk)
+        full_text = await nim.chat(cfg.CHIEF_MODEL, messages, nim_key, max_tokens=1200, on_chunk=on_chunk)
     except Exception as e_chief:
         await ctx.log("CHIEF_AGENT", f"NIM Chief failed ({e_chief}), trying NIM fallback…", "warn")
         fallback_key = ctx.nim_key or cfg.nim_key("fallback")
@@ -917,8 +962,25 @@ async def master_orchestrate(ctx: AgentContext) -> None:
                     "data": {"sofa": ctx.sofa, "news2": ctx.news2}})
 
     # Explicit 4-role pipeline required by PS.
-    await run_note_parser_agent(ctx)
-    await run_temporal_lab_mapper_agent(ctx)
+    # NOTE_PARSER and the safety/temporal agents are independent — run in parallel.
+    # agent_temporal_lab_mapper needs parsed_notes so it runs after both complete.
+    await ctx.set_orch_status("NOTE_PARSER_AGENT", "active")
+    await ctx.set_orch_status("TEMPORAL_LAB_MAPPER_AGENT", "active")
+    await asyncio.gather(
+        agent_note_parser(ctx),
+        asyncio.gather(
+            agent_outlier_detector(ctx),
+            agent_med_safety(ctx),
+            agent_alert_escalation(ctx),
+            agent_trend_classifier(ctx),
+            agent_trajectory_predictor(ctx),
+            return_exceptions=True,
+        ),
+        return_exceptions=True,
+    )
+    await agent_temporal_lab_mapper(ctx)
+    await ctx.set_orch_status("NOTE_PARSER_AGENT", "done")
+    await ctx.set_orch_status("TEMPORAL_LAB_MAPPER_AGENT", "done")
     await run_guideline_rag_agent(ctx)
     await run_chief_synthesis_agent(ctx)
 
