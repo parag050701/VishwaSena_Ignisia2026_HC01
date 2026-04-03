@@ -1,6 +1,9 @@
 import os
 
 class Config:
+    # ═══════════════════════════════════════════════════════════
+    # CLINICAL AI MODELS
+    # ═══════════════════════════════════════════════════════════
     OLLAMA_BASE = "http://localhost:11434"
     NIM_BASE = "https://integrate.api.nvidia.com/v1"
 
@@ -20,7 +23,36 @@ class Config:
     OLLAMA_TIMEOUT = 120.0
     NIM_TIMEOUT = 90.0
     
-    # Data paths
+    # ═══════════════════════════════════════════════════════════
+    # VOICE SETTINGS (NEW)
+    # ═══════════════════════════════════════════════════════════
+    # Speech-to-Text (STT) Configuration
+    STT_MODEL = os.getenv("STT_MODEL", "base")  # tiny, base, small, medium, large
+    STT_DEVICE = os.getenv("STT_DEVICE", "cuda")  # cuda or cpu
+    STT_LANGUAGE = os.getenv("STT_LANGUAGE", "en")
+    STT_CHUNK_SIZE = int(os.getenv("STT_CHUNK_SIZE", "30"))  # seconds
+    
+    # Text-to-Speech (TTS) Configuration
+    TTS_ENGINE = os.getenv("TTS_ENGINE", "kokoro")  # kokoro or coqui
+    TTS_VOICE = os.getenv("TTS_VOICE", "female")  # female or male
+    TTS_SPEED = float(os.getenv("TTS_SPEED", "1.0"))  # 0.5-2.0
+    TTS_DEVICE = os.getenv("TTS_DEVICE", "cuda")  # cuda or cpu
+    TTS_SAMPLE_RATE = 24000  # Hz (Kokoro native)
+    
+    # ═══════════════════════════════════════════════════════════
+    # EHR/FHIR CONFIGURATION (NEW)
+    # ═══════════════════════════════════════════════════════════
+    FHIR_SERVER_URL = os.getenv("FHIR_SERVER_URL", "")
+    FHIR_CLIENT_ID = os.getenv("FHIR_CLIENT_ID", "")
+    FHIR_CLIENT_SECRET = os.getenv("FHIR_CLIENT_SECRET", "")
+    FHIR_OAUTH_URL = os.getenv("FHIR_OAUTH_URL", "")
+    FHIR_SCOPE = os.getenv("FHIR_SCOPE", "user/Patient.read user/Observation.read user/Encounter.read")
+    FHIR_TIMEOUT = 30  # seconds
+    FHIR_CACHE_TTL = 300  # 5 minutes
+    
+    # ═══════════════════════════════════════════════════════════
+    # DATA PATHS
+    # ═══════════════════════════════════════════════════════════
     DATA_DIR = os.getenv("HC01_DATA_DIR", ".")
     MIMIC_CSVS = {
         "noteevents": os.path.join(DATA_DIR, "NOTEEVENTS.csv"),
@@ -30,6 +62,14 @@ class Config:
         "patients": os.path.join(DATA_DIR, "PATIENTS.csv"),
         "prescriptions": os.path.join(DATA_DIR, "PRESCRIPTIONS.csv"),
     }
+    
+    # ═══════════════════════════════════════════════════════════
+    # FEATURE FLAGS
+    # ═══════════════════════════════════════════════════════════
+    ENABLE_VOICE = True  # Enable voice capabilities
+    ENABLE_EHR = bool(FHIR_SERVER_URL)  # Enable EHR only if configured
+    USE_CHIEF_MODEL_FOR_VOICE = True  # Use advanced reasoning for voice
+    DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 
 cfg = Config()
