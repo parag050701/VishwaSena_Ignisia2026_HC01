@@ -236,6 +236,50 @@ class NIMClient:
                     pass
         return full
 
+    async def embed(self, texts: List[str], api_key: str, model: Optional[str] = None) -> List[np.ndarray]:
+        """OpenAI-compatible embeddings call against NVIDIA NIM."""
+        if not api_key:
+            raise RuntimeError("NIM API key not configured for embeddings")
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        candidate_models = []
+        if model:
+            candidate_models.append(model)
+        if cfg.NIM_EMBED_MODEL not in candidate_models:
+            candidate_models.append(cfg.NIM_EMBED_MODEL)
+        # Fallback alias commonly used by providers for bge-large 335M class model.
+        if "baai/bge-large-en-v1.5" not in candidate_models:
+            candidate_models.append("baai/bge-large-en-v1.5")
+
+        client = _get_nim_client()
+        last_exc: Exception = RuntimeError("NIM embedding request not attempted")
+        for m in candidate_models:
+            try:
+                payload = {
+                    "model": m,
+                    "input": texts,
+                    "encoding_format": "float",
+                }
+                resp = await client.post("/embeddings", json=payload, headers=headers)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"NIM embeddings HTTP {resp.status_code}: {resp.text[:300]}")
+                data = resp.json().get("data", [])
+                if not data:
+                    raise RuntimeError("NIM embeddings response missing data")
+                vectors = [np.array(item.get("embedding", []), dtype=np.float32) for item in data]
+                if any(v.size == 0 for v in vectors):
+                    raise RuntimeError("NIM embeddings returned empty vector")
+                return vectors
+            except Exception as exc:
+                last_exc = exc
+                continue
+
+        raise last_exc
+
 
 # ─── Singletons ────────────────────────────────────────────────────────────
 ollama = OllamaClient()

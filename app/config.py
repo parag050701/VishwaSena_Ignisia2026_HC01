@@ -29,6 +29,7 @@ class Config:
     # API keys — never hardcoded; must be set in .env
     NIM_API_KEY_CHIEF: str = os.getenv("NIM_API_KEY_CHIEF", "")
     NIM_API_KEY_FALLBACK: str = os.getenv("NIM_API_KEY_FALLBACK", "")
+    NIM_EMBED_MODEL: str = os.getenv("NIM_EMBED_MODEL", "bge-large:335m")
 
     # ═══════════════════════════════════════════════════════════
     # PIPELINE TUNING
@@ -76,6 +77,8 @@ class Config:
     # DATA PATHS
     # ═══════════════════════════════════════════════════════════
     DATA_DIR: str = os.getenv("HC01_DATA_DIR", ".")
+    MEDICAL_GUIDELINES_DIR: str = os.getenv("MEDICAL_GUIDELINES_DIR", "data/medical_guidelines")
+    MEDICAL_RAG_DB_DIR: str = os.getenv("MEDICAL_RAG_DB_DIR", "data/medical_rag_db")
     MIMIC_CSVS: dict = {
         "noteevents":    os.path.join(os.getenv("HC01_DATA_DIR", "."), "NOTEEVENTS.csv"),
         "labevents":     os.path.join(os.getenv("HC01_DATA_DIR", "."), "LABEVENTS.csv"),

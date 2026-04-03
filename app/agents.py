@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import math
 import re
 import time
 from typing import Dict, List
@@ -11,7 +10,9 @@ from typing import Dict, List
 from . import data
 from .clients import nim, ollama
 from .config import cfg
+from .medical_rag import get_medical_rag
 from .models import AgentContext
+from .outlier_detection import detect_lab_outliers
 from .scoring import calc_news2, calc_sofa, cosine_sim, keyword_score
 
 log = logging.getLogger("HC01.agents")
@@ -94,32 +95,7 @@ async def agent_outlier_detector(ctx: AgentContext) -> None:
     orch = "SAFETY"
     await ctx.set_agent_status(orch, "OUTLIER_DETECTOR", "active")
     try:
-        labs = ctx.patient.labs
-        outliers = []
-        for name, arr in labs.items():
-            if not isinstance(arr, list) or len(arr) < 3:
-                continue
-            try:
-                vals = [float(x["v"] if isinstance(x, dict) else x) for x in arr]
-            except (KeyError, TypeError, ValueError):
-                continue
-            history, latest_v = vals[:-1], vals[-1]
-            mean = sum(history) / len(history)
-            variance = sum((x - mean) ** 2 for x in history) / len(history)
-            std = math.sqrt(variance)
-            if std < 1e-6:
-                continue
-            z = abs((latest_v - mean) / std)
-            if z > cfg.OUTLIER_Z:
-                outliers.append({
-                    "lab":       name,
-                    "value":     latest_v,
-                    "mean":      round(mean, 2),
-                    "std":       round(std, 2),
-                    "z":         round(z, 2),
-                    "timepoint": arr[-1].get("t", "?") if isinstance(arr[-1], dict) else "?",
-                    "action":    "HOLD DIAGNOSIS — Recommend confirmed redraw",
-                })
+        outliers = detect_lab_outliers(ctx.patient.labs, z_threshold=cfg.OUTLIER_Z)
         ctx.outliers = outliers
         if outliers:
             summary = ", ".join(f"{o['lab']}(Z={o['z']})" for o in outliers)
@@ -515,6 +491,15 @@ async def agent_semantic_retriever(ctx: AgentContext) -> List[Dict]:
         ] + alert_msgs[:2]
         query = ". ".join(str(x) for x in query_parts if x)
 
+        # First preference: local medical vector DB built from guideline PDFs.
+        try:
+            rag = get_medical_rag(cfg.MEDICAL_RAG_DB_DIR)
+            retrieved = await rag.query(query, top_k=cfg.TOP_K_GUIDELINES)
+            if retrieved:
+                await ctx.log("SEMANTIC_RETRIEVER", f"Medical RAG DB hit: {len(retrieved)} chunks", "info")
+        except Exception as exc:
+            await ctx.log("SEMANTIC_RETRIEVER", f"Medical RAG DB unavailable ({exc}), falling back", "warn")
+
         if data._guideline_embeddings and await ollama.is_online():
             await ctx.log("SEMANTIC_RETRIEVER", "Computing bge-m3 query embedding…", "info")
             try:
@@ -550,6 +535,41 @@ async def agent_semantic_retriever(ctx: AgentContext) -> List[Dict]:
     return retrieved
 
 
+# ─── Explicit PS roles ───────────────────────────────────────────────────────
+
+async def run_note_parser_agent(ctx: AgentContext) -> None:
+    await ctx.set_orch_status("NOTE_PARSER_AGENT", "active")
+    await agent_note_parser(ctx)
+    await ctx.set_orch_status("NOTE_PARSER_AGENT", "done")
+
+
+async def run_temporal_lab_mapper_agent(ctx: AgentContext) -> None:
+    await ctx.set_orch_status("TEMPORAL_LAB_MAPPER_AGENT", "active")
+    await asyncio.gather(
+        agent_outlier_detector(ctx),
+        agent_med_safety(ctx),
+        agent_alert_escalation(ctx),
+        agent_trend_classifier(ctx),
+        agent_trajectory_predictor(ctx),
+        return_exceptions=True,
+    )
+    await agent_temporal_lab_mapper(ctx)
+    await ctx.set_orch_status("TEMPORAL_LAB_MAPPER_AGENT", "done")
+
+
+async def run_guideline_rag_agent(ctx: AgentContext) -> None:
+    await ctx.set_orch_status("GUIDELINE_RAG_AGENT", "active")
+    guidelines = await agent_semantic_retriever(ctx)
+    await agent_rag_explainer(ctx, guidelines)
+    await ctx.set_orch_status("GUIDELINE_RAG_AGENT", "done")
+
+
+async def run_chief_synthesis_agent(ctx: AgentContext) -> None:
+    await ctx.set_orch_status("CHIEF_SYNTHESIS_AGENT", "active")
+    await agent_synthesis(ctx)
+    await ctx.set_orch_status("CHIEF_SYNTHESIS_AGENT", "done")
+
+
 async def agent_rag_explainer(ctx: AgentContext, guidelines: List[Dict]) -> None:
     orch = "EVIDENCE"
     await ctx.set_agent_status(orch, "RAG_EXPLAINER", "active")
@@ -568,16 +588,43 @@ async def agent_rag_explainer(ctx: AgentContext, guidelines: List[Dict]) -> None
 
         messages = [
             {"role": "system",
-             "content": "You are a clinical evidence agent. Using retrieved guidelines, write 3-4 concise, cited clinical observations relevant to the patient findings. Use [Source §Section] citation format. Be direct and clinical."},
+             "content": (
+                 "You are a clinical evidence agent. Output ONLY 3 bullet points. "
+                 "Each bullet must be <= 24 words, clinically actionable, and end with one citation in [Source §Section] format. "
+                 "No preamble, no rationale section, no chain-of-thought."
+             )},
             {"role": "user",
              "content": (
                  f"Patient: {ctx.patient.name}, {ctx.patient.age}{ctx.patient.sex}. "
                  f"{ctx.patient.admitDiag}.\n"
                  f"Lab findings: {findings_str}\nOutliers: {outlier_str}\n\n"
-                 f"Guidelines:\n{guideline_ctx}\n\nWrite cited observations:"
+                 f"Guidelines:\n{guideline_ctx}\n\nReturn exactly 3 bullets."
              )},
         ]
-        explanation = await _ollama_or_nim(ctx, messages, max_tokens=500)
+        # Prefer NIM fallback model here to minimize verbose reasoning leakage.
+        fallback_key = ctx.nim_key or cfg.nim_key("fallback")
+        if fallback_key:
+            explanation = await nim.chat(cfg.FALLBACK_MODEL, messages, fallback_key, max_tokens=350)
+        else:
+            explanation = await _ollama_or_nim(ctx, messages, max_tokens=350)
+        # Keep only concise final bullets if model emits extra sections.
+        lines = [ln.strip() for ln in explanation.splitlines() if ln.strip()]
+        bullet_lines = [ln for ln in lines if ln.startswith("-") or ln.startswith("*")]
+        if bullet_lines:
+            compact = []
+            for ln in bullet_lines[:3]:
+                text = ln.lstrip("-* ").strip().replace('"', "")
+                words = text.split()
+                if len(words) > 24:
+                    text = " ".join(words[:24]) + "..."
+                compact.append(f"- {text}")
+            explanation = "\n".join(compact)
+        else:
+            compact = []
+            for ln in lines[:3]:
+                words = ln.split()
+                compact.append(" ".join(words[:24]) + ("..." if len(words) > 24 else ""))
+            explanation = "\n".join(compact)
     except Exception as exc:
         log.exception("RAG_EXPLAINER error")
         explanation = f"RAG explanation unavailable: {exc}"
@@ -869,39 +916,11 @@ async def master_orchestrate(ctx: AgentContext) -> None:
     await ctx.send({"type": "agent_result", "orchestrator": "SCORING", "agent": "SOFA_NEWS2",
                     "data": {"sofa": ctx.sofa, "news2": ctx.news2}})
 
-    # Wave 1 — parallel
-    await ctx.log("HC01", "Wave 1: Launching 6 agents in parallel…", "info")
-    for orch in ["CLINICAL", "SAFETY", "TEMPORAL"]:
-        await ctx.set_orch_status(orch, "active")
-
-    await asyncio.gather(
-        agent_note_parser(ctx),
-        agent_outlier_detector(ctx),
-        agent_med_safety(ctx),
-        agent_alert_escalation(ctx),
-        agent_trend_classifier(ctx),
-        agent_trajectory_predictor(ctx),
-        return_exceptions=True,
-    )
-
-    # Temporal Lab Mapper runs after note parser and trend classifier finish
-    # (needs ctx.parsed_notes and ctx.lab_findings)
-    await agent_temporal_lab_mapper(ctx)
-
-    for orch in ["CLINICAL", "SAFETY", "TEMPORAL"]:
-        await ctx.set_orch_status(orch, "done")
-    await ctx.log("HC01", "Wave 1 complete.", "info")
-
-    # Wave 2 — evidence retrieval
-    await ctx.set_orch_status("EVIDENCE", "active")
-    guidelines = await agent_semantic_retriever(ctx)
-    await agent_rag_explainer(ctx, guidelines)
-    await ctx.set_orch_status("EVIDENCE", "done")
-
-    # Wave 3 — chief synthesis
-    await ctx.set_orch_status("SYNTHESIS", "active")
-    await agent_synthesis(ctx)
-    await ctx.set_orch_status("SYNTHESIS", "done")
+    # Explicit 4-role pipeline required by PS.
+    await run_note_parser_agent(ctx)
+    await run_temporal_lab_mapper_agent(ctx)
+    await run_guideline_rag_agent(ctx)
+    await run_chief_synthesis_agent(ctx)
 
     elapsed = round((time.time() - start) * 1000)
     await ctx.send({
