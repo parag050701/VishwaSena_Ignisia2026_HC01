@@ -547,17 +547,25 @@ async def agent_semantic_retriever(ctx: AgentContext) -> List[Dict]:
         except Exception as exc:
             await ctx.log("SEMANTIC_RETRIEVER", f"Medical RAG DB unavailable ({exc}), falling back", "warn")
 
-        # Pre-embedded guidelines + keyword query matching (no runtime embed call — avoids 50s+ latency)
+        # NIM semantic retrieval: embed query + cosine similarity against pre-embedded guidelines (~0.5s)
         if data._guideline_embeddings and not retrieved:
-            await ctx.log("SEMANTIC_RETRIEVER", "Using pre-embedded guidelines + keyword scoring…", "info")
-            lower = query.lower()
-            scored = [
-                {**g, "score": keyword_score(lower, g["keywords"]) + (0.1 if any(w in g["text"].lower() for w in lower.split()[:10]) else 0)}
-                for i, g in enumerate(data.GUIDELINES)
-            ]
-            scored.sort(key=lambda x: x["score"], reverse=True)
-            retrieved = scored[:cfg.TOP_K_GUIDELINES]
-            await ctx.log("SEMANTIC_RETRIEVER", f"Keyword retrieval done. Top score: {retrieved[0]['score']:.3f}", "info")
+            nim_key = ctx.nim_key or cfg.nim_key("fallback") or cfg.nim_key("chief")
+            if nim_key:
+                try:
+                    await ctx.log("SEMANTIC_RETRIEVER", "NIM query embedding (nv-embedqa-e5-v5)…", "info")
+                    q_vecs = await nim.embed([query[:512]], nim_key, input_type="query")
+                    q_emb  = q_vecs[0]
+                    scored = [
+                        {**g, "score": round(float(cosine_sim(q_emb, data._guideline_embeddings[i])), 4)}
+                        for i, g in enumerate(data.GUIDELINES)
+                        if data._guideline_embeddings[i] is not None
+                    ]
+                    scored.sort(key=lambda x: x["score"], reverse=True)
+                    retrieved = scored[:cfg.TOP_K_GUIDELINES]
+                    await ctx.log("SEMANTIC_RETRIEVER",
+                        f"Semantic retrieval done. Top score: {retrieved[0]['score']:.4f}", "info")
+                except Exception as e:
+                    await ctx.log("SEMANTIC_RETRIEVER", f"NIM embed failed ({e}), keyword fallback", "warn")
 
         if not retrieved:
             lower = query.lower()
@@ -996,28 +1004,18 @@ async def master_orchestrate(ctx: AgentContext) -> None:
 
 
 async def preembed_guidelines() -> None:
-    """Pre-compute embeddings for all guidelines at startup."""
-    if not await ollama.is_online():
-        log.info("Ollama offline — skipping guideline pre-embedding (keyword fallback active)")
+    """Pre-compute NIM bge embeddings for all guidelines at startup (single batch ~0.6s)."""
+    nim_key = cfg.nim_key("fallback") or cfg.nim_key("chief")
+    if not nim_key:
+        log.info("No NIM key — skipping guideline pre-embedding (keyword fallback active)")
         return
-    models = await ollama.available_models()
-    embed_models = ["nomic-embed-text", "bge-m3", "bge-large"]
-    if not any(any(em in m for em in embed_models) for m in models):
-        log.info("No embedding model found in Ollama — skipping pre-embedding")
-        return
-    embeds = []
-    for g in data.GUIDELINES:
-        text = f"{g.get('source', g.get('citation', ''))} {g['section']}: {g['text']}"
-        try:
-            emb = await ollama.embed(text)
-            embeds.append(emb)
-        except Exception as exc:
-            log.warning("Failed to embed guideline %s: %s", g.get("id", "?"), exc)
-            embeds.append(None)
-    # Store all that succeeded; fall back to keyword for None slots
-    failed = sum(1 for e in embeds if e is None)
-    if failed == 0:
-        data._guideline_embeddings = embeds
-        log.info("Pre-embedded %d guidelines", len(embeds))
-    else:
-        log.warning("%d guideline embeddings failed; using keyword fallback", failed)
+    try:
+        texts = [
+            f"{g.get('source', g.get('citation', ''))} {g['section']}: {g['text']}"
+            for g in data.GUIDELINES
+        ]
+        vectors = await nim.embed(texts, nim_key, input_type="passage")
+        data._guideline_embeddings = vectors
+        log.info("NIM pre-embedded %d guidelines (nvidia/nv-embedqa-e5-v5)", len(vectors))
+    except Exception as exc:
+        log.warning("NIM guideline pre-embedding failed (%s) — keyword fallback active", exc)
