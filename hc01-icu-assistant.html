@@ -17,17 +17,25 @@
   --bg1:       #0d1017;
   --bg2:       #111620;
   --bg3:       #161c28;
+  --surface:   #111620;
+  --s2:        #111620;
+  --s3:        #161c28;
   --border:    #1e2a3a;
   --border2:   #253040;
   --green:     #00ff88;
+  --green2:    #1abc9c;
   --green-dim: #00c96a;
   --amber:     #ffaa00;
+  --amber2:    #f39c12;
   --red:       #ff3355;
+  --red2:      #c0392b;
   --blue:      #4fc3f7;
+  --cyan:      #4fc3f7;
   --purple:    #b39ddb;
   --text:      #cdd6e0;
   --text2:     #7d8fa0;
   --text3:     #4a5a6a;
+  --muted:     #7d8fa0;
   --mono:      'JetBrains Mono', monospace;
   --sans:      'Syne', sans-serif;
 }
@@ -182,6 +190,438 @@ select:focus, input:focus { border-color: var(--green); }
 .left-panel { border-right: 1px solid var(--border); background: var(--bg1); }
 .center-panel { border-right: 1px solid var(--border); background: var(--bg); }
 .right-panel { background: var(--bg1); }
+
+.hidden { display: none !important; }
+
+.panel-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  background: var(--s2);
+}
+.model-routing-block {
+  margin-left: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  font-size: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.model-routing-title {
+  color: var(--text3);
+  letter-spacing: 0.15em;
+}
+.model-routing-line {
+  display: flex;
+  gap: 8px;
+  color: var(--text2);
+}
+.model-routing-status {
+  color: var(--text3);
+}
+.header-status-group {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 16px;
+}
+.system-status {
+  font-size: 9px;
+  color: var(--text3);
+  letter-spacing: 0.15em;
+}
+.risk-badge-inline { display: none; }
+.risk-chip-row {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.vitals-timestamp {
+  font-size: 8px;
+  color: var(--text3);
+}
+.dataset-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 0 6px 0;
+}
+.backend-mode {
+  font-size: 8px;
+  color: var(--text3);
+}
+.orch-agents-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.section-label-blue { font-size: 8px; color: var(--blue); }
+.section-label-muted { font-size: 8px; color: var(--text3); }
+.section-label-green { font-size: 8px; color: var(--green); }
+.muted-inline { color: var(--text3); }
+.report-muted {
+  color: var(--text3);
+  font-size: 10px;
+}
+.report-subtitle {
+  font-size: 8px;
+  color: var(--text3);
+  letter-spacing: 0.15em;
+}
+.report-subtitle-green {
+  font-size: 8px;
+  color: var(--green);
+}
+.alert-badge-text {
+  font-size: 9px;
+  color: var(--text3);
+}
+.trajectory-subtitle {
+  font-size: 8px;
+  color: var(--text3);
+}
+.title-accent-red { color: var(--red); }
+.title-accent-amber { color: var(--amber); }
+.title-accent-blue { color: var(--blue); }
+.title-accent-green { color: var(--green); }
+.title-accent-text3 { color: var(--text3); }
+.title-accent-text2 { color: var(--text2); }
+.hover-red { color: var(--red); }
+.hover-green { color: var(--green); }
+.hover-amber { color: var(--amber); }
+.no-results {
+  color: var(--text2);
+  font-size: 10px;
+}
+.hand-over-meta {
+  font-size: 8px;
+  color: var(--green);
+}
+.table-unit { font-size: 9px; color: var(--text3); }
+.table-lowhigh { color: var(--text3); font-size: 9px; }
+.synth-muted { color: var(--text3); }
+.sofa-total-label { color: var(--text2); font-size: 10px; letter-spacing: 0.1em; }
+.sofa-mortality-note { font-size: 8px; color: var(--text3); margin-top: 4px; letter-spacing: 0.1em; }
+.mortality-high { color: var(--red); font-weight: 600; }
+.mortality-medium { color: var(--amber); font-weight: 600; }
+.mortality-low { color: var(--text2); font-weight: 600; }
+.lab-unit-inline { font-size: 9px; color: var(--text3); }
+.lab-ref-inline { color: var(--text3); font-size: 9px; }
+.error-block { color: var(--red); font-size: 10px; }
+.prewrap-block { font-size: 10px; color: var(--text2); white-space: pre-wrap; }
+.section-block-spaced { margin-bottom: 6px; }
+.section-heading-tight { font-size: 8px; letter-spacing: 0.2em; color: var(--text3); text-transform: uppercase; margin-bottom: 3px; }
+.section-item-line { font-size: 10px; padding: 2px 0; border-bottom: 1px solid var(--border); }
+.report-strong-green { color: var(--green); font-weight: 600; }
+.report-strong-amber { color: var(--amber); font-weight: 600; }
+.diff-empty-state { color: var(--text2); font-size: 10px; }
+.diff-color-0 { color: var(--red); }
+.diff-color-1 { color: var(--amber); }
+.diff-color-2 { color: #4fc3f7; }
+.diff-label { font-size: 9px; color: var(--text2); }
+.diff-pct-label { font-size: 9px; }
+.tab-btn {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font: 10px var(--mono);
+  letter-spacing: 1px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.tab-btn.active {
+  border-color: var(--green);
+  color: var(--green2);
+  background: rgba(26,188,156,0.08);
+}
+
+.devil-toggle {
+  margin-left: auto;
+  background: var(--s2);
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  padding: 8px 16px;
+  font: 10px var(--mono);
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+.devil-toggle.active {
+  border-color: var(--amber);
+  color: var(--amber2);
+  background: rgba(230,126,34,0.08);
+}
+
+.devil-panel {
+  display: none;
+  background: var(--s2);
+  border-bottom: 2px solid var(--amber);
+  padding: 16px 20px;
+}
+.devil-panel.visible {
+  display: block;
+  animation: slideDown 0.3s ease;
+}
+.devil-header {
+  color: var(--amber2);
+  font-size: 10px;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+.devil-label {
+  color: var(--amber2);
+  font-size: 9px;
+  letter-spacing: 2px;
+  display: block;
+  margin: 10px 0 4px 0;
+}
+.devil-body {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+.risk-report {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  padding: 12px;
+}
+.report-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.report-title {
+  font-size: 10px;
+  color: var(--text3);
+  letter-spacing: 2px;
+}
+.export-btn {
+  display: none;
+  background: var(--s2);
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font: 10px var(--mono);
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.export-btn:hover { border-color: var(--green); color: var(--green2); }
+
+.risk-flag {
+  border: 1px solid var(--border);
+  background: var(--s2);
+  margin-bottom: 10px;
+}
+.risk-flag-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--s3);
+}
+.risk-name { color: var(--text); font-size: 11px; letter-spacing: 1px; }
+.risk-confidence { color: var(--text); font-size: 10px; }
+.risk-severity {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border: 1px solid var(--border2);
+}
+.risk-severity.high { color: var(--red2); border-color: var(--red); background: rgba(192,57,43,0.15); }
+.risk-severity.medium { color: var(--amber2); border-color: var(--amber); background: rgba(230,126,34,0.15); }
+.risk-severity.low { color: var(--green2); border-color: var(--green); background: rgba(26,188,156,0.15); }
+
+.decay-badge {
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border: 1px solid var(--border2);
+}
+.decay-badge.fresh { background: rgba(26,188,156,0.15); border-color: var(--green); color: var(--green2); }
+.decay-badge.aging { background: rgba(230,126,34,0.15); border-color: var(--amber); color: var(--amber2); }
+.decay-badge.stale { background: rgba(192,57,43,0.15); border-color: var(--red); color: var(--red2); }
+
+.explain-btn {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font: 9px var(--mono);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.explain-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+
+.risk-body { padding: 10px; font-size: 10px; line-height: 1.7; color: var(--text2); }
+.risk-citation { border-left: 2px solid var(--purple); background: rgba(179,157,219,0.08); padding: 8px; margin-top: 6px; color: var(--text); }
+.risk-action { border: 1px solid var(--green); background: rgba(26,188,156,0.08); padding: 8px; margin-top: 6px; color: var(--green2); }
+
+.explain-panel {
+  display: none;
+  background: var(--s3);
+  border-left: 2px solid var(--cyan);
+  padding: 12px 14px;
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.explain-panel.visible { display: block; }
+.explain-label {
+  color: var(--cyan);
+  font-size: 9px;
+  letter-spacing: 2px;
+}
+
+.golden-hour {
+  background: rgba(192,57,43,0.08);
+  border: 1px solid var(--red);
+  border-left: 4px solid var(--red2);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.golden-hour.complete { border-color: var(--green); border-left-color: var(--green2); }
+.golden-label {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--red);
+  text-transform: uppercase;
+}
+.golden-label.complete { color: var(--green2); }
+.golden-timer {
+  font-family: var(--sans);
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--red2);
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 8px 0;
+}
+.golden-timer.complete { color: var(--green2); }
+.timer-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.timer-btn {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  padding: 5px 14px;
+  font: 10px var(--mono);
+  cursor: pointer;
+}
+.timer-btn.checked {
+  background: rgba(26,188,156,0.2);
+  border-color: var(--green);
+  color: var(--green2);
+}
+
+.pattern-match {
+  background: rgba(52,152,219,0.06);
+  border: 1px solid var(--blue);
+  border-left: 3px solid var(--blue);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.pattern-head {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--blue);
+  margin-bottom: 8px;
+}
+.pattern-count { font-size: 13px; color: var(--text); margin-bottom: 8px; }
+.pattern-row { display: flex; font-size: 10px; margin-bottom: 3px; }
+.pattern-row .l { color: var(--muted); width: 220px; }
+.pattern-row .v { color: var(--text); }
+.pattern-row .v.bad { color: var(--red2); }
+.pattern-row .v.good { color: var(--green2); }
+
+.safety-caveat {
+  background: var(--s3);
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font-size: 10px;
+  padding: 10px;
+}
+
+.velocity-panel {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  margin-top: 8px;
+  padding: 10px 14px;
+}
+.velocity-title { font-size: 9px; letter-spacing: 2px; color: var(--muted); margin-bottom: 8px; }
+.velocity-row { display: flex; gap: 12px; font-size: 10px; margin-bottom: 4px; align-items: center; }
+.velocity-lab { color: var(--muted); width: 90px; }
+.velocity-rate { color: var(--text); width: 140px; }
+.velocity-badge { font-size: 9px; padding: 1px 8px; border: 1px solid transparent; }
+.velocity-accel { color: var(--red2); background: rgba(192,57,43,0.15); border-color: var(--red); }
+.velocity-rise { color: var(--amber2); background: rgba(230,126,34,0.15); border-color: var(--amber); }
+.velocity-stable { color: var(--muted); }
+.velocity-fall { color: var(--green2); }
+.velocity-projection { margin-top: 8px; font-size: 10px; color: var(--text); }
+
+.view-toggle {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.view-btn {
+  background: var(--s2);
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  padding: 6px 12px;
+  font: 10px var(--mono);
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+.view-btn.active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: rgba(79,195,247,0.1);
+}
+
+.ward-board {
+  display: none;
+  padding: 14px 20px;
+  background: var(--bg);
+  min-height: calc(100vh - 90px);
+}
+.ward-board.visible { display: block; }
+.ward-panel { border: 1px solid var(--border); background: var(--s2); padding: 12px; }
+.ward-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.ward-title { font-family: var(--sans); font-weight: 800; font-size: 18px; }
+.ward-meta { color: var(--muted); font-size: 10px; letter-spacing: 1px; }
+.ward-table { width: 100%; border-collapse: collapse; font: 11px var(--mono); }
+.ward-table th {
+  font-size: 10px; letter-spacing: 2px; color: var(--muted);
+  border-bottom: 1px solid var(--border2); padding: 10px 14px;
+  text-align: left; cursor: pointer;
+}
+.ward-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.ward-row { background: var(--s2); }
+.ward-row:hover { background: var(--s3); }
+.ward-row.critical { border-left: 3px solid var(--red); }
+.ward-action-btn {
+  background: transparent; border: 1px solid var(--border2); color: var(--cyan);
+  font: 10px var(--mono); padding: 4px 10px; cursor: pointer;
+}
+.ward-summary {
+  margin-top: 10px; color: var(--text); font-size: 11px;
+  border-top: 1px solid var(--border2); padding-top: 8px;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
 /* ══════════════════════════════════════════════════
    CARDS
@@ -607,7 +1047,7 @@ select:focus, input:focus { border-color: var(--green); }
   <div class="header-divider"></div>
   <div class="patient-select-group">
     <div class="field-label">PATIENT</div>
-    <select id="patientSelect" onchange="loadPatient(this.value)">
+    <select id="patientSelect" aria-label="Patient selector" title="Patient selector" onchange="loadPatient(this.value)">
       <option value="P001">P001 — Chen Wei, 67M — Suspected Sepsis</option>
       <option value="P002">P002 — Rodriguez M., 54F — Post-op ARDS</option>
       <option value="P003">P003 — Okafor K., 72M — AKI Monitoring</option>
@@ -620,10 +1060,14 @@ select:focus, input:focus { border-color: var(--green); }
     <button class="btn btn-green" id="runBtn" onclick="runFullDiagnostics()">&#9654; RUN DIAGNOSTICS</button>
     <button class="btn btn-amber" onclick="resetAll()">RESET</button>
   </div>
-  <div style="margin-left:8px;padding-left:12px;border-left:1px solid var(--border);font-size:9px;display:flex;flex-direction:column;gap:3px;">
-    <div style="color:var(--text3);letter-spacing:0.15em;">MODEL ROUTING</div>
-    <div id="modelRouting" style="display:flex;gap:8px;color:var(--text2);">
-      <span style="color:var(--text3)">Checking Ollama...</span>
+  <div class="view-toggle">
+    <button id="patientViewBtn" class="view-btn active" onclick="switchView('patient')">PATIENT VIEW</button>
+    <button id="wardViewBtn" class="view-btn" onclick="switchView('ward')">WARD BOARD</button>
+  </div>
+  <div class="model-routing-block">
+    <div class="model-routing-title">MODEL ROUTING</div>
+    <div id="modelRouting" class="model-routing-line">
+      <span class="model-routing-status">Checking Ollama...</span>
     </div>
   </div>
 </div>
@@ -649,14 +1093,14 @@ select:focus, input:focus { border-color: var(--green); }
     <span class="step-icon">&#9670;</span>
     <div><div class="step-name">Chief Synthesis</div><div class="step-model">Nemotron-70B · NIM</div></div>
   </div>
-  <div style="margin-left:auto; display:flex; align-items:center; gap:10px; padding-left:16px;">
-    <div id="systemStatus" style="font-size:9px;color:var(--text3);letter-spacing:0.15em;">STANDBY</div>
-    <div id="riskBadge" style="display:none;" class="patient-badge badge-red">HIGH RISK</div>
+  <div class="header-status-group">
+    <div id="systemStatus" class="system-status">STANDBY</div>
+    <div id="riskBadge" class="patient-badge badge-red risk-badge-inline">HIGH RISK</div>
   </div>
 </div>
 
 <!-- ════════════════════ MAIN GRID ════════════════════ -->
-<div class="main-grid">
+<div class="main-grid" id="appLayout">
 
   <!-- ══ LEFT PANEL ══ -->
   <div class="panel left-panel">
@@ -667,12 +1111,12 @@ select:focus, input:focus { border-color: var(--green); }
       <div class="patient-name" id="ptName">—</div>
       <div class="patient-meta" id="ptMeta">—</div>
       <div id="ptBadge"></div>
-      <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;" id="riskChips"></div>
+      <div id="riskChips" class="risk-chip-row"></div>
     </div>
 
     <!-- Vitals Grid -->
     <div class="card">
-      <div class="card-title">Vital Signs <span id="vitalsTS" style="font-size:8px;color:var(--text3)"></span></div>
+      <div class="card-title">Vital Signs <span id="vitalsTS" class="vitals-timestamp"></span></div>
       <div class="vitals-grid" id="vitalsGrid">
         <div class="vital-item">
           <div class="vital-label">HR</div>
@@ -741,8 +1185,28 @@ select:focus, input:focus { border-color: var(--green); }
   <!-- ══ CENTER PANEL ══ -->
   <div class="panel center-panel">
 
+    <div class="panel-tabs">
+      <button class="tab-btn active" id="tabBtnReport" onclick="switchTab('report')">REPORT</button>
+      <button class="tab-btn" id="tabBtnLog" onclick="switchTab('log')">LOG</button>
+      <button class="tab-btn" id="tabBtnDiff" onclick="switchTab('diff')">DIFFERENTIAL</button>
+      <button id="devilToggle" class="devil-toggle" onclick="toggleDevilMode()">⚖ COUNTER-ARGUMENT</button>
+    </div>
+    <div id="devilPanel" class="devil-panel"></div>
+
+    <div id="tab-report" class="tab-content active" data-timestamp="">
+      <div class="risk-report" id="riskReport">
+        <div class="report-section-header">
+          <div class="report-title">RISK REPORT</div>
+          <button id="exportReportBtn" class="export-btn" onclick="exportReportPDF()">↓ EXPORT REPORT</button>
+        </div>
+        <div id="riskReportBody"><div class="empty-state">Awaiting analysis</div></div>
+      </div>
+    </div>
+
+    <div id="tab-log" class="tab-content">
+
     <!-- Dataset Credibility Badges -->
-    <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 0 6px 0;">
+    <div class="dataset-badges">
       <div class="ds-badge" title="MIMIC-IV v2.2, PhysioNet">MIMIC-IV · 73k ICU stays</div>
       <div class="ds-badge" title="eICU Collaborative Research Database">eICU-CRD · 200k encounters</div>
       <div class="ds-badge" title="PhysioNet Sepsis Challenge 2019">PhysioNet Sepsis · AUROC 0.869</div>
@@ -752,7 +1216,7 @@ select:focus, input:focus { border-color: var(--green); }
 
     <!-- Multi-Orchestrator Visualization -->
     <div class="card">
-      <div class="card-title">Orchestration Layer <span id="backendMode" style="font-size:8px;color:var(--text3)">STANDALONE</span></div>
+      <div class="card-title">Orchestration Layer <span id="backendMode" class="backend-mode">STANDALONE</span></div>
       <div class="orch-grid">
         <!-- Clinical Intelligence -->
         <div class="orch-cell" id="orch-CLINICAL">
@@ -790,7 +1254,7 @@ select:focus, input:focus { border-color: var(--green); }
         <!-- Synthesis (full width) -->
         <div class="orch-cell orch-synthesis" id="orch-SYNTHESIS">
           <div class="orch-name">Synthesis Orchestrator — Nemotron-70B · NVIDIA NIM <span class="orch-name-accent" id="orch-SYNTHESIS-status">IDLE</span></div>
-          <div class="orch-agents" style="flex-direction:row;flex-wrap:wrap;gap:12px;">
+          <div class="orch-agents orch-agents-row">
             <div class="orch-agent-row"><div class="orch-dot" id="dot-SOFA_NEWS2"></div>SOFA/NEWS2</div>
             <div class="orch-agent-row"><div class="orch-dot" id="dot-CHIEF_AGENT"></div>Chief Agent</div>
           </div>
@@ -829,7 +1293,7 @@ select:focus, input:focus { border-color: var(--green); }
 
     <!-- RAG Evidence -->
     <div class="card">
-      <div class="card-title">Clinical Evidence <span style="font-size:8px;color:var(--blue)">[RETRIEVED]</span></div>
+      <div class="card-title">Clinical Evidence <span class="section-label-blue">[RETRIEVED]</span></div>
       <div id="ragEvidence">
         <div class="empty-state">Awaiting RAG retrieval</div>
       </div>
@@ -837,9 +1301,9 @@ select:focus, input:focus { border-color: var(--green); }
 
     <!-- Chief Synthesis -->
     <div class="card">
-      <div class="card-title">Chief Agent Synthesis <span style="font-size:8px;color:var(--text3)">Nemotron-70B</span></div>
+      <div class="card-title">Chief Agent Synthesis <span class="section-label-muted">Nemotron-70B</span></div>
       <div class="synthesis-output" id="synthesisOutput">
-        <span style="color:var(--text3)">Awaiting agent pipeline completion...</span>
+        <span class="synth-muted">Awaiting agent pipeline completion...</span>
       </div>
     </div>
 
@@ -848,6 +1312,17 @@ select:focus, input:focus { border-color: var(--green); }
       <div class="card-title">Parsed Clinical Notes</div>
       <div id="parsedNotes">
         <div class="empty-state">—</div>
+      </div>
+    </div>
+
+    </div>
+
+    <div id="tab-diff" class="tab-content">
+      <div class="card">
+        <div class="card-title">Differential Diagnosis Ranking</div>
+        <div class="diff-list" id="diffListSecondary">
+          <div class="empty-state">Awaiting Chief Agent synthesis</div>
+        </div>
       </div>
     </div>
 
@@ -861,6 +1336,10 @@ select:focus, input:focus { border-color: var(--green); }
       <div class="card-title">Lab Trend Timeline</div>
       <div class="chart-wrap">
         <canvas id="labChart"></canvas>
+      </div>
+      <div id="velocityPanel" class="velocity-panel">
+        <div class="velocity-title">TREND VELOCITY</div>
+        <div class="empty-state">Awaiting timeline</div>
       </div>
     </div>
 
@@ -884,7 +1363,7 @@ select:focus, input:focus { border-color: var(--green); }
 
     <!-- Alert Escalation -->
     <div class="card">
-      <div class="card-title">Alert Escalation <span id="alertLevelBadge" style="font-size:9px;color:var(--text3)">NORMAL</span></div>
+      <div class="card-title">Alert Escalation <span id="alertLevelBadge" class="alert-badge-text">NORMAL</span></div>
       <div class="alert-panel" id="alertPanel">
         <div class="empty-state">Awaiting safety validation</div>
       </div>
@@ -892,7 +1371,7 @@ select:focus, input:focus { border-color: var(--green); }
 
     <!-- Trajectory Predictions -->
     <div class="card">
-      <div class="card-title">6/12h Trajectory Predictions <span style="font-size:8px;color:var(--text3)">MIMIC-IV ref</span></div>
+      <div class="card-title">6/12h Trajectory Predictions <span class="trajectory-subtitle">MIMIC-IV ref</span></div>
       <div class="trajectory-grid" id="trajectoryGrid">
         <div class="empty-state">Awaiting temporal analysis</div>
       </div>
@@ -900,10 +1379,36 @@ select:focus, input:focus { border-color: var(--green); }
 
     <!-- Shift Handover Brief -->
     <div class="card">
-      <div class="card-title">Shift Handover Brief <span style="font-size:8px;color:var(--green)">[AUTO-GENERATED]</span></div>
+      <div class="card-title">Shift Handover Brief <span class="report-subtitle-green">[AUTO-GENERATED]</span></div>
       <div class="handover-text" id="handoverBrief">Awaiting synthesis...</div>
     </div>
 
+  </div>
+</div>
+
+<div id="wardBoard" class="ward-board">
+  <div class="ward-panel">
+    <div class="ward-head">
+      <div class="ward-title">MICU WARD OVERVIEW</div>
+      <div class="ward-meta" id="wardMeta"></div>
+    </div>
+    <table class="ward-table" id="wardTable">
+      <thead>
+        <tr>
+          <th>PATIENT ID</th>
+          <th>NAME</th>
+          <th>SOFA</th>
+          <th>NEWS2</th>
+          <th>LACTATE</th>
+          <th>CREATININE</th>
+          <th>STATUS</th>
+          <th>TRAJECTORY</th>
+          <th>ACTION</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="ward-summary" id="wardSummary"></div>
   </div>
 </div>
 
@@ -1019,6 +1524,7 @@ const PATIENTS = {
     age: 67, sex: 'M',
     weight: 72,
     daysInICU: 1.8,
+    lastLabHoursAgo: 7,
     admitDiag: 'Suspected Sepsis / Source Under Investigation',
     vitals: { hr:118, bpSys:90, bpDia:58, map:69, rr:24, spo2:93, temp:38.9, gcs:13, fio2:0.28 },
     labs: {
@@ -1055,6 +1561,7 @@ const PATIENTS = {
     age: 54, sex: 'F',
     weight: 68,
     daysInICU: 2.1,
+    lastLabHoursAgo: 4,
     admitDiag: 'Post-op Day 2 — Bowel Resection — ARDS Developing',
     vitals: { hr:102, bpSys:108, bpDia:65, map:79, rr:28, spo2:88, temp:37.6, gcs:14, fio2:0.60 },
     labs: {
@@ -1086,6 +1593,7 @@ const PATIENTS = {
     age: 72, sex: 'M',
     weight: 80,
     daysInICU: 3.5,
+    lastLabHoursAgo: 2,
     admitDiag: 'AKI Stage 2 — Monitoring — Post-Contrast',
     vitals: { hr:78, bpSys:132, bpDia:82, map:99, rr:16, spo2:97, temp:37.1, gcs:15, fio2:0.21 },
     labs: {
@@ -1113,6 +1621,53 @@ const PATIENTS = {
   }
 };
 
+const MIMIC_PATTERNS = [
+  {
+    id: 'sepsis_high_lactate',
+    match: { sofaMin: 8, sofaMax: 14, lactateMin: 3.0, lactateMax: 6.0 },
+    cases: 1247,
+    shockPct: 68,
+    medianVasopressorHours: 4.2,
+    mortalityPct: 31,
+    label: 'High-lactate sepsis trajectory'
+  },
+  {
+    id: 'septic_shock_severe',
+    match: { sofaMin: 14, sofaMax: 24, lactateMin: 4.0, lactateMax: 99 },
+    cases: 634,
+    shockPct: 89,
+    medianVasopressorHours: 2.1,
+    mortalityPct: 52,
+    label: 'Severe septic shock trajectory'
+  },
+  {
+    id: 'aki_progression',
+    match: { sofaMin: 5, sofaMax: 10, creatRatio: 2.0 },
+    cases: 892,
+    dialysisPct: 34,
+    recoveryPct: 58,
+    medianICUDays: 7.4,
+    label: 'Progressive AKI trajectory'
+  },
+  {
+    id: 'multi_organ_critical',
+    match: { sofaMin: 15, sofaMax: 24, lactateMin: 5.0 },
+    cases: 312,
+    mortalityPct: 67,
+    medianICUDays: 12.1,
+    label: 'Multi-organ failure trajectory'
+  },
+  {
+    id: 'early_sepsis_intervention',
+    match: { sofaMin: 4, sofaMax: 8, lactateMin: 2.0, lactateMax: 4.0 },
+    cases: 2103,
+    shockPct: 28,
+    recoveryPct: 74,
+    medianICUDays: 4.8,
+    label: 'Early sepsis - favorable if treated promptly'
+  }
+];
+
 // ══════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════
@@ -1122,6 +1677,15 @@ let agentResults   = {};
 let logCount       = 0;
 let backendWS      = null;   // WebSocket to server.py
 let backendOnline  = false;  // true if server.py responded
+let currentView    = 'patient';
+let timerInterval  = null;
+let sepsisTimerStart = null;
+let sepsisActionsState = { antibiotics: false, cultures: false, fluids: false };
+let explainState   = {};
+let devilModeVisible = false;
+let devilGeneratedForPatient = null;
+let wardSort = { key: 'sofa', dir: 'desc' };
+let lastAnalysisContext = null;
 
 // ══════════════════════════════════════════════════
 // WEBSOCKET CLIENT (server.py multi-orchestrator)
@@ -1188,12 +1752,16 @@ function handleBackendMessage(msg) {
       setOrchStatus(msg.orchestrator, msg.status);
       break;
 
-    case 'agent_status':
+    case 'agent_status': {
       setAgentDot(msg.agent, msg.status);
       // Also update pipeline bar
       const pipeMap = {NOTE_PARSER:1, TREND_CLASSIFIER:2, SEMANTIC_RETRIEVER:3, CHIEF_AGENT:4};
-      if (pipeMap[msg.agent]) setPipe(pipeMap[msg.agent], msg.status === 'active' ? 'active' : msg.status === 'done' ? 'done' : msg.status);
+      let pipeStatus = msg.status;
+      if (msg.status === 'active') pipeStatus = 'active';
+      else if (msg.status === 'done') pipeStatus = 'done';
+      if (pipeMap[msg.agent]) setPipe(pipeMap[msg.agent], pipeStatus);
       break;
+    }
 
     case 'agent_result':
       handleAgentResult(msg.orchestrator, msg.agent, msg.data);
@@ -1209,7 +1777,7 @@ function handleBackendMessage(msg) {
       }
       break;
 
-    case 'pipeline_complete':
+    case 'pipeline_complete': {
       document.getElementById('synthesisOutput').dataset.accumulated = '';
       const el = document.getElementById('synthesisOutput');
       el.querySelector('.cursor-blink')?.remove();
@@ -1219,6 +1787,7 @@ function handleBackendMessage(msg) {
       btn.disabled = false;
       btn.innerHTML = '&#9654; RUN DIAGNOSTICS';
       break;
+    }
 
     case 'error':
       logAgent('HC01', `Backend error: ${msg.message}`, 'error');
@@ -1227,7 +1796,12 @@ function handleBackendMessage(msg) {
 }
 
 function handleAgentResult(orch, agent, data) {
-  if (agent === 'NOTE_PARSER') renderParsedFindings(data);
+  if (agent === 'NOTE_PARSER') {
+    renderParsedFindings(data);
+    if (lastAnalysisContext) {
+      lastAnalysisContext.noteConcerns = extractNoteConcerns(data);
+    }
+  }
   if (agent === 'OUTLIER_DETECTOR') renderOutlierFromBackend(data);
   if (agent === 'MED_SAFETY') renderMedsFromBackend(data);
   if (agent === 'ALERT_ESCALATION') renderAlertPanel(data);
@@ -1240,7 +1814,7 @@ function handleAgentResult(orch, agent, data) {
     if (data.news2) {
       const n2 = document.getElementById('news2Number');
       n2.textContent = data.news2.total;
-      n2.style.color = data.news2.level==='HIGH'?'var(--red)':data.news2.level==='MEDIUM'?'var(--amber)':'var(--green)';
+      n2.className = `news2-number ${data.news2.level==='HIGH'?'news2-color-high':data.news2.level==='MEDIUM'?'news2-color-medium':'news2-color-low'}`;
     }
   }
   if (agent === 'CHIEF_AGENT' && data.synthesis) {
@@ -1260,7 +1834,7 @@ function setOrchStatus(orch, status) {
   if (!cell || !label) return;
   cell.className = `orch-cell ${status}`;
   label.textContent = status.toUpperCase();
-  label.style.color = status==='active'?'var(--amber)':status==='done'?'var(--green)':'var(--text3)';
+  label.className = `orch-name-accent ${status==='active'?'status-active':status==='done'?'status-done':'status-idle'}`;
 }
 
 function setAgentDot(agent, status) {
@@ -1278,7 +1852,7 @@ function renderOutlierFromBackend(outliers) {
   if (!outliers || !outliers.length) { el.classList.remove('visible'); return; }
   el.classList.add('visible');
   const o = outliers[0];
-  txt.innerHTML = `<strong>${o.lab.toUpperCase()}</strong> value <strong style="color:var(--red)">${o.value}</strong> at ${o.timepoint} — Z=${o.z} vs 72h mean ${o.mean}±${o.std}. <strong>DIAGNOSIS HELD — Confirmed redraw required.</strong>`;
+  txt.innerHTML = `<strong>${o.lab.toUpperCase()}</strong> value <strong class="report-red">${o.value}</strong> at ${o.timepoint} — Z=${o.z} vs 72h mean ${o.mean}±${o.std}. <strong>DIAGNOSIS HELD — Confirmed redraw required.</strong>`;
 }
 
 function renderMedsFromBackend(conflicts) {
@@ -1298,15 +1872,15 @@ function renderAlertPanel(data) {
   const badge = document.getElementById('alertLevelBadge');
   if (!data || !data.alerts) return;
   badge.textContent = data.level || 'NORMAL';
-  badge.style.color = data.level==='CRITICAL'?'var(--red)':data.level==='WARNING'?'var(--amber)':'var(--blue)';
+  badge.className = `alert-badge-text ${data.level==='CRITICAL'?'report-red':data.level==='WARNING'?'report-amber':'report-blue'}`;
   if (!data.alerts.length) {
-    panel.innerHTML = '<div style="color:var(--green);font-size:10px">No active alerts — patient stable</div>';
+    panel.innerHTML = '<div class="alert-normal-text">No active alerts — patient stable</div>';
     return;
   }
   panel.innerHTML = data.alerts.map(a => `
     <div class="alert-item ${a.level}">
       <div>
-        <div style="font-size:10px"><span class="alert-badge badge-${a.level}">[${a.level}]</span> ${a.message}</div>
+        <div class="alert-message"><span class="alert-badge badge-${a.level}">[${a.level}]</span> ${a.message}</div>
         ${a.intervention?`<div class="alert-intervention">→ ${a.intervention}</div>`:''}
       </div>
     </div>`).join('');
@@ -1323,8 +1897,8 @@ function renderTrajectoryGrid(predictions) {
     return `<div class="traj-row">
       <div class="traj-lab">${k}</div>
       <div class="traj-arrow traj-${v.trajectory_status}">${arrow}</div>
-      <div style="font-size:9px;color:var(--text2)">now <strong>${v.current}</strong> → 6h <strong>${v.pred_6h}</strong> → 12h <strong>${v.pred_12h}</strong></div>
-      <div class="traj-${v.trajectory_status}" style="font-size:8px;margin-left:auto">${v.trajectory_status.replace(/_/g,' ')}</div>
+      <div class="traj-meta">now <strong>${v.current}</strong> → 6h <strong>${v.pred_6h}</strong> → 12h <strong>${v.pred_12h}</strong></div>
+      <div class="traj-${v.trajectory_status} traj-status">${v.trajectory_status.replace(/_/g,' ')}</div>
     </div>`;
   }).join('');
 }
@@ -1332,10 +1906,10 @@ function renderTrajectoryGrid(predictions) {
 function renderRAGFromBackend(chunks) {
   const el = document.getElementById('ragEvidence');
   const method = chunks[0]?.score !== undefined ? 'bge-m3 · cosine similarity' : 'keyword matching';
-  el.innerHTML = `<div style="font-size:8px;color:var(--text3);letter-spacing:0.15em;margin-bottom:6px">METHOD: ${method.toUpperCase()}</div>` +
+  el.innerHTML = `<div class="rag-method">METHOD: ${method.toUpperCase()}</div>` +
     chunks.map(g => `
       <div class="rag-item">
-        <div class="rag-source">${g.source} · ${g.section}${g.score!==undefined?` <span style="color:var(--text3)">[sim=${g.score}]</span>`:''}</div>
+        <div class="rag-source">${g.source} · ${g.section}${g.score!==undefined?` <span class="muted-inline">[sim=${g.score}]</span>`:''}</div>
         <div class="rag-text">${g.text}</div>
       </div>`).join('');
 }
@@ -1344,9 +1918,9 @@ function appendRAGExplanation(text) {
   if (!text) return;
   const el = document.getElementById('ragEvidence');
   el.innerHTML += `
-    <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-      <div style="font-size:8px;color:var(--text3);letter-spacing:0.2em;margin-bottom:4px">RAG AGENT SYNTHESIS</div>
-      <div style="font-size:10px;line-height:1.7;color:var(--text);white-space:pre-wrap">${text}</div>
+    <div class="rag-synthesis-wrap">
+      <div class="rag-synthesis-label">RAG AGENT SYNTHESIS</div>
+      <div class="rag-synthesis-text">${text}</div>
     </div>`;
 }
 
@@ -1374,6 +1948,599 @@ function logAgent(agent, msg, type='normal') {
 function setPipe(n, state) {
   const el = document.getElementById(`pipe-${n}`);
   el.className = `pipe-step ${state}`;
+}
+
+function selectPatientByIndex(idx) {
+  const keys = Object.keys(PATIENTS);
+  const id = keys[idx] || keys[0];
+  const sel = document.getElementById('patientSelect');
+  if (sel) sel.value = id;
+  loadPatient(id);
+}
+
+function switchTab(tabName) {
+  const tabs = ['report', 'log', 'diff'];
+  tabs.forEach(name => {
+    const btn = document.getElementById(`tabBtn${name.charAt(0).toUpperCase()}${name.slice(1)}`);
+    const panel = document.getElementById(`tab-${name}`);
+    if (btn) btn.classList.toggle('active', name === tabName);
+    if (panel) panel.classList.toggle('active', name === tabName);
+  });
+}
+
+function switchView(view) {
+  currentView = view;
+  const appLayout = document.getElementById('appLayout');
+  const wardBoard = document.getElementById('wardBoard');
+  const patientBtn = document.getElementById('patientViewBtn');
+  const wardBtn = document.getElementById('wardViewBtn');
+
+  if (view === 'ward') {
+    appLayout.classList.add('hidden');
+    wardBoard.classList.add('visible');
+    patientBtn.classList.remove('active');
+    wardBtn.classList.add('active');
+    renderWardBoard();
+  } else {
+    appLayout.classList.remove('hidden');
+    wardBoard.classList.remove('visible');
+    patientBtn.classList.add('active');
+    wardBtn.classList.remove('active');
+  }
+}
+
+function patientStatus(pt, sofa, news2, lactate) {
+  if (sofa >= 10 || news2 >= 7 || lactate >= 4) return 'CRITICAL';
+  if (sofa >= 6 || news2 >= 5 || lactate >= 2) return 'SERIOUS';
+  return 'MONITOR';
+}
+
+function trajectoryFromLabs(pt) {
+  const arr = pt.labs.lactate || [];
+  if (arr.length < 2) return { label: 'STABLE', badge: '→', cls: 'chip-green' };
+  const delta = arr[arr.length - 1].v - arr[0].v;
+  if (delta > 1.0) return { label: 'DETERIORATING', badge: '▲▲', cls: 'chip-red' };
+  if (delta >= 0.3) return { label: 'WORSENING', badge: '▲', cls: 'chip-amber' };
+  return { label: 'STABLE', badge: '→', cls: 'chip-green' };
+}
+
+function renderWardBoard() {
+  const rows = Object.values(PATIENTS).map(pt => {
+    const sofa = calcSOFA(pt).total;
+    const news2 = calcNEWS2(pt).total;
+    const lactate = pt.labs.lactate[pt.labs.lactate.length - 1].v;
+    const creatinine = pt.labs.creatinine[pt.labs.creatinine.length - 1].v;
+    const status = patientStatus(pt, sofa, news2, lactate);
+    const traj = trajectoryFromLabs(pt);
+    return { id: pt.id, name: pt.name, sofa, news2, lactate, creatinine, status, traj };
+  });
+
+  const k = wardSort.key;
+  const dir = wardSort.dir === 'asc' ? 1 : -1;
+  rows.sort((a, b) => {
+    const av = a[k];
+    const bv = b[k];
+    if (typeof av === 'string') return av.localeCompare(bv) * dir;
+    return (av - bv) * dir;
+  });
+
+  const sortArrow = col => (wardSort.key === col ? (wardSort.dir === 'asc' ? '↑' : '↓') : '');
+  const table = document.getElementById('wardTable');
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th onclick="sortWardBy('id')">PATIENT ID ${sortArrow('id')}</th>
+        <th onclick="sortWardBy('name')">NAME ${sortArrow('name')}</th>
+        <th onclick="sortWardBy('sofa')">SOFA ${sortArrow('sofa')}</th>
+        <th onclick="sortWardBy('news2')">NEWS2 ${sortArrow('news2')}</th>
+        <th onclick="sortWardBy('lactate')">LACTATE ${sortArrow('lactate')}</th>
+        <th onclick="sortWardBy('creatinine')">CREATININE ${sortArrow('creatinine')}</th>
+        <th onclick="sortWardBy('status')">STATUS ${sortArrow('status')}</th>
+        <th onclick="sortWardBy('trajectory')">TRAJECTORY</th>
+        <th>ACTION</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map(r => {
+        const sCls = r.status === 'CRITICAL' ? 'chip-red' : r.status === 'SERIOUS' ? 'chip-amber' : 'chip-green';
+        const rowCls = r.status === 'CRITICAL' ? 'ward-row critical' : 'ward-row';
+        return `<tr class="${rowCls}">
+          <td>${r.id}</td>
+          <td>${r.name}</td>
+          <td>${r.sofa}</td>
+          <td>${r.news2}</td>
+          <td>${r.lactate}</td>
+          <td>${r.creatinine}</td>
+          <td><span class="risk-chip ${sCls}">${r.status}</span></td>
+          <td><span class="risk-chip ${r.traj.cls}">${r.traj.badge} ${r.traj.label}</span></td>
+          <td><button class="ward-action-btn" onclick="analyzeFromWard('${r.id}')">ANALYZE →</button></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  `;
+
+  const critical = rows.filter(r => r.status === 'CRITICAL').length;
+  const serious = rows.filter(r => r.status === 'SERIOUS').length;
+  const stable = rows.filter(r => r.status === 'MONITOR').length;
+  const avgSofa = (rows.reduce((s, r) => s + r.sofa, 0) / rows.length).toFixed(1);
+  const highest = rows.slice().sort((a, b) => b.sofa - a.sofa)[0]?.id || 'NA';
+
+  document.getElementById('wardSummary').textContent =
+    `WARD SUMMARY: ${critical} CRITICAL · ${serious} SERIOUS · ${stable} STABLE | Avg SOFA: ${avgSofa} | Highest risk: ${highest}`;
+  document.getElementById('wardMeta').textContent =
+    `${new Date().toLocaleTimeString()} | ${rows.length} PATIENTS MONITORED`;
+}
+
+function sortWardBy(key) {
+  if (wardSort.key === key) {
+    wardSort.dir = wardSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    wardSort.key = key;
+    wardSort.dir = key === 'name' || key === 'id' || key === 'status' ? 'asc' : 'desc';
+  }
+  renderWardBoard();
+}
+
+function analyzeFromWard(id) {
+  switchView('patient');
+  const sel = document.getElementById('patientSelect');
+  sel.value = id;
+  loadPatient(id);
+  setTimeout(() => runFullDiagnostics(), 300);
+}
+
+function selectPatient(idx) {
+  const ids = Object.keys(PATIENTS);
+  const id = ids[idx];
+  if (!id) return;
+  switchView('patient');
+  const sel = document.getElementById('patientSelect');
+  sel.value = id;
+  loadPatient(id);
+}
+
+function linearRegressionSlope(values) {
+  const n = values.length;
+  const xMean = (n - 1) / 2;
+  const yMean = values.reduce((a, b) => a + b, 0) / n;
+  let num = 0;
+  let den = 0;
+  values.forEach((y, x) => {
+    num += (x - xMean) * (y - yMean);
+    den += (x - xMean) ** 2;
+  });
+  return den === 0 ? 0 : num / den;
+}
+
+function calcVelocity(timeline, colIdx) {
+  const values = timeline.map(v => Number(v));
+  if (values.length < 2) return { rate: 0, acceleration: false, direction: 'flat' };
+  const slope = linearRegressionSlope(values);
+  const lastThree = values.slice(-3);
+  const s3 = lastThree.length >= 2 ? linearRegressionSlope(lastThree) : slope;
+  const acceleration = Math.abs(s3) > Math.abs(slope) * 1.3;
+  const direction = slope > 0.02 ? 'up' : slope < -0.02 ? 'down' : 'flat';
+  return { rate: slope, acceleration, direction };
+}
+
+function renderVelocityPanel(pt, projections) {
+  const panel = document.getElementById('velocityPanel');
+  const labs = [
+    { key: 'wbc', label: 'WBC', unit: '×10³/μL/h' },
+    { key: 'lactate', label: 'Lactate', unit: 'mmol/L/h' },
+    { key: 'creatinine', label: 'Creatinine', unit: 'mg/dL/h' }
+  ];
+  const rows = labs.map(l => {
+    const vals = pt.labs[l.key].map(x => x.v);
+    const v = calcVelocity(vals, 0);
+    let badge = 'STABLE →';
+    let cls = 'velocity-stable';
+    if (v.direction === 'up' && v.acceleration) { badge = 'ACCELERATING ▲▲'; cls = 'velocity-accel'; }
+    else if (v.direction === 'up') { badge = 'RISING ▲'; cls = 'velocity-rise'; }
+    else if (v.direction === 'down') { badge = 'FALLING ▼'; cls = 'velocity-fall'; }
+    return `<div class="velocity-row"><div class="velocity-lab">${l.label}</div><div class="velocity-rate">${v.rate >= 0 ? '+' : ''}${v.rate.toFixed(2)} ${l.unit}</div><div class="velocity-badge ${cls}">${badge}</div></div>`;
+  }).join('');
+
+  const l6 = projections.lactate6h;
+  const c6 = projections.creatinine6h;
+  const w6 = projections.wbc6h;
+  const severity = l6 > 4 || c6 > 3 || w6 > 20 ? 'CRITICAL' : (l6 > 2.5 || c6 > 2.0 || w6 > 15 ? 'WARNING' : 'NORMAL');
+
+  panel.innerHTML = `<div class="velocity-title">TREND VELOCITY</div>${rows}<div class="velocity-projection">⚡ Projected T+6h: Lactate ~${l6.toFixed(1)} mmol/L [${severity}]</div>`;
+}
+
+function matchMIMICPattern(sofa, lactate, creatinine, creatRatio) {
+  let best = null;
+  let bestScore = -1;
+  for (const p of MIMIC_PATTERNS) {
+    let score = 0;
+    const m = p.match;
+    if (m.sofaMin !== undefined && sofa >= m.sofaMin) score += 1;
+    if (m.sofaMax !== undefined && sofa <= m.sofaMax) score += 1;
+    if (m.lactateMin !== undefined && lactate >= m.lactateMin) score += 1;
+    if (m.lactateMax !== undefined && lactate <= m.lactateMax) score += 1;
+    if (m.creatRatio !== undefined && creatRatio >= m.creatRatio) score += 1;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  return bestScore >= 2 ? best : null;
+}
+
+function getDataDecay(hoursAgo, baseConfidence) {
+  if (hoursAgo < 3) {
+    return { confidence: baseConfidence, cls: 'fresh', text: 'DATA FRESH' };
+  }
+  if (hoursAgo <= 6) {
+    return {
+      confidence: Math.max(0, Math.round(baseConfidence * 0.9)),
+      cls: 'aging',
+      text: `⚠ DATA AGING — ${hoursAgo}h ago`
+    };
+  }
+  return {
+    confidence: Math.max(0, Math.round(baseConfidence * 0.8)),
+    cls: 'stale',
+    text: `⚠ STALE DATA — ${hoursAgo}h ago — recommend fresh labs before acting`
+  };
+}
+
+function getFlagEvidence(flag, pt, sofa) {
+  const latest = {
+    lactate: pt.labs.lactate[pt.labs.lactate.length - 1].v,
+    wbc: pt.labs.wbc[pt.labs.wbc.length - 1].v,
+    creat: pt.labs.creatinine[pt.labs.creatinine.length - 1].v,
+    map: pt.vitals.map,
+    sbp: pt.vitals.bpSys,
+    temp: pt.vitals.temp,
+    rr: pt.vitals.rr
+  };
+  if (flag === 'septic_shock') return `MAP ${latest.map} mmHg, SBP ${latest.sbp}, lactate ${latest.lactate} mmol/L, SOFA ${sofa.total}`;
+  if (flag === 'sepsis') return `Lactate ${latest.lactate}, WBC ${latest.wbc}, Temp ${latest.temp}, RR ${latest.rr}, SOFA ${sofa.total}`;
+  if (flag === 'aki') return `Creatinine ${latest.creat} mg/dL trend, urine concern from notes, nephrotoxic meds`;
+  if (flag === 'ards') return `PaO2 ${pt.labs.pao2}, FiO2 ${pt.vitals.fio2}, respiratory distress trajectory`;
+  return `SOFA ${sofa.total}, lactate ${latest.lactate}, WBC ${latest.wbc}, creatinine ${latest.creat}`;
+}
+
+async function callClaude(systemPrompt, userPrompt, maxTokens) {
+  const payload = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }]
+  };
+
+  const endpoints = [
+    `${CONFIG.BACKEND_HTTP}/api/claude`,
+    `${CONFIG.BACKEND_HTTP}/claude`
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!r.ok) continue;
+      const data = await r.json();
+      if (typeof data === 'string') return data;
+      if (data.text) return data.text;
+      if (data.content?.[0]?.text) return data.content[0].text;
+      if (data.completion) return data.completion;
+      if (data.message) return data.message;
+    } catch {}
+  }
+  throw new Error('Claude endpoint unavailable');
+}
+
+function formatExplainSections(text) {
+  return text
+    .replace(/WHY FLAGGED/gi, '<span class="explain-label">WHY FLAGGED</span>')
+    .replace(/EVIDENCE WEIGHED/gi, '<span class="explain-label">EVIDENCE WEIGHED</span>')
+    .replace(/WHAT WAS CONSIDERED BUT NOT FLAGGED|NOT FLAGGED/gi, '<span class="explain-label">NOT FLAGGED</span>');
+}
+
+async function toggleExplain(flagKey) {
+  const btn = document.getElementById(`explainBtn-${flagKey}`);
+  const panel = document.getElementById(`explainPanel-${flagKey}`);
+  if (!btn || !panel || !currentPatient || !lastAnalysisContext) return;
+
+  const st = explainState[flagKey] || { open: false, loaded: false };
+  if (st.open) {
+    panel.classList.remove('visible');
+    btn.innerHTML = '[? EXPLAIN]';
+    st.open = false;
+    explainState[flagKey] = st;
+    return;
+  }
+
+  if (st.loaded) {
+    panel.classList.add('visible');
+    btn.innerHTML = '[▲ HIDE]';
+    st.open = true;
+    explainState[flagKey] = st;
+    return;
+  }
+
+  btn.innerHTML = '<span class="spinner"></span> [THINKING...]';
+  const sofa = lastAnalysisContext.sofa;
+  const evidence = getFlagEvidence(flagKey, currentPatient, sofa);
+  try {
+    const text = await callClaude(
+      'You are an ICU clinical AI explainability engine. Explain in plain English why a risk was flagged. Be direct, clinical, concise. Structure: WHY FLAGGED (2 sentences) | EVIDENCE WEIGHED (2-3 bullet points) | WHAT WAS CONSIDERED BUT NOT FLAGGED (1 sentence). No markdown. Use plain text with these exact section labels.',
+      `Explain why ${flagKey} was flagged for patient ${currentPatient.id}. Key data: ${evidence}. SOFA: ${sofa.total}. Last lab: ${currentPatient.lastLabHoursAgo}h ago.`,
+      300
+    );
+    panel.innerHTML = formatExplainSections(text || 'Explanation unavailable');
+  } catch {
+    panel.innerHTML = 'Explanation unavailable';
+  }
+  panel.classList.add('visible');
+  btn.innerHTML = '[▲ HIDE]';
+  explainState[flagKey] = { open: true, loaded: true };
+}
+
+function formatDevilSections(text) {
+  return text
+    .replace(/PRIMARY CHALLENGE:/gi, '<span class="devil-label">PRIMARY CHALLENGE:</span>')
+    .replace(/ALTERNATIVE EXPLANATIONS:/gi, '<span class="devil-label">ALTERNATIVE EXPLANATIONS:</span>')
+    .replace(/MISSING EVIDENCE:/gi, '<span class="devil-label">MISSING EVIDENCE:</span>')
+    .replace(/RECOMMENDATION:/gi, '<span class="devil-label">RECOMMENDATION:</span>');
+}
+
+async function toggleDevilMode() {
+  const btn = document.getElementById('devilToggle');
+  const panel = document.getElementById('devilPanel');
+  if (!lastAnalysisContext || !currentPatient) return;
+
+  if (devilModeVisible) {
+    devilModeVisible = false;
+    panel.classList.remove('visible');
+    btn.classList.remove('active');
+    btn.textContent = '⚖ COUNTER-ARGUMENT';
+    return;
+  }
+
+  if (devilGeneratedForPatient === currentPatient.id && panel.innerHTML.trim()) {
+    devilModeVisible = true;
+    panel.classList.add('visible');
+    btn.classList.add('active');
+    btn.textContent = '⚖ COUNTER-ARGUMENT';
+    return;
+  }
+
+  btn.classList.add('active');
+  btn.innerHTML = '<span class="spinner"></span> GENERATING...';
+  const topRisk = lastAnalysisContext.riskFlags[0]?.key || 'sepsis';
+  const pt = currentPatient;
+  const l = pt.labs;
+  try {
+    const text = await callClaude(
+      "You are a clinical devil's advocate AI. Your job is to argue AGAINST the primary diagnosis in a rigorous, intellectually honest way. You are NOT saying the diagnosis is wrong — you are identifying the strongest counter-evidence a skeptical clinician would raise. Format exactly as: PRIMARY CHALLENGE: [1-2 sentences challenging the main diagnosis] ALTERNATIVE EXPLANATIONS: [2-3 numbered alternatives] MISSING EVIDENCE: [what data would strengthen or refute the diagnosis] RECOMMENDATION: [balanced 1-sentence recommendation] Plain text only. No markdown.",
+      `Primary diagnosis: ${topRisk}. Patient ${pt.id}, SOFA ${lastAnalysisContext.sofa.total}, NEWS2 ${lastAnalysisContext.news2.total}. Key evidence FOR diagnosis: Lactate ${l.lactate.map(x=>x.v).join('→')}, WBC ${l.wbc.map(x=>x.v).join('→')}, Creatinine ${l.creatinine.map(x=>x.v).join('→')}. Flagged meds: ${pt.medications.join(', ')}. Notes summary: ${(lastAnalysisContext.noteConcerns || []).join('; ')}. Generate the strongest possible counter-argument.`,
+      400
+    );
+    panel.innerHTML = `<div class="devil-header">⚖ DEVIL'S ADVOCATE — COUNTER-ARGUMENT</div><div class="devil-body">${formatDevilSections(text)}</div>`;
+  } catch {
+    panel.innerHTML = `<div class="devil-header">⚖ DEVIL'S ADVOCATE — COUNTER-ARGUMENT</div><div class="devil-body">Counter-argument unavailable</div>`;
+  }
+  devilGeneratedForPatient = currentPatient.id;
+  devilModeVisible = true;
+  panel.classList.add('visible');
+  btn.textContent = '⚖ COUNTER-ARGUMENT';
+}
+
+function formatTime(ms) {
+  const total = Math.floor(ms / 1000);
+  const h = String(Math.floor(total / 3600)).padStart(2, '0');
+  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+  const s = String(total % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+function toggleSepsisAction(actionKey) {
+  sepsisActionsState[actionKey] = !sepsisActionsState[actionKey];
+  const btn = document.getElementById(`timerAction-${actionKey}`);
+  if (!btn) return;
+  btn.classList.toggle('checked', sepsisActionsState[actionKey]);
+  const labelMap = {
+    antibiotics: 'ANTIBIOTICS GIVEN',
+    cultures: 'CULTURES DRAWN',
+    fluids: 'FLUIDS INITIATED'
+  };
+  btn.textContent = `${sepsisActionsState[actionKey] ? '✓ ' : ''}${labelMap[actionKey]}`;
+
+  const allDone = Object.values(sepsisActionsState).every(Boolean);
+  const block = document.getElementById('goldenHour');
+  const label = document.getElementById('goldenHourLabel');
+  const timer = document.getElementById('goldenHourTimer');
+  if (allDone && block && label && timer) {
+    block.classList.add('complete');
+    label.textContent = '✓ SEPSIS PROTOCOL COMPLETE';
+    label.classList.add('complete');
+    timer.classList.add('complete');
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }
+}
+
+function renderGoldenHourBlock() {
+  sepsisActionsState = { antibiotics: false, cultures: false, fluids: false };
+  sepsisTimerStart = Date.now();
+  if (timerInterval) clearInterval(timerInterval);
+
+  return `<div class="golden-hour" id="goldenHour">
+    <div class="golden-label" id="goldenHourLabel">⏱ SEPSIS GOLDEN HOUR</div>
+    <div style="font-size:10px;color:var(--text2);margin-top:4px">Time since detection:</div>
+    <div class="golden-timer" id="goldenHourTimer">00:00:00</div>
+    <div class="timer-actions">
+      <button id="timerAction-antibiotics" class="timer-btn" onclick="toggleSepsisAction('antibiotics')">ANTIBIOTICS GIVEN</button>
+      <button id="timerAction-cultures" class="timer-btn" onclick="toggleSepsisAction('cultures')">CULTURES DRAWN</button>
+      <button id="timerAction-fluids" class="timer-btn" onclick="toggleSepsisAction('fluids')">FLUIDS INITIATED</button>
+    </div>
+  </div>`;
+}
+
+function startGoldenHourTimer() {
+  const el = document.getElementById('goldenHourTimer');
+  if (!el || !sepsisTimerStart) return;
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (!el) return;
+    el.textContent = formatTime(Date.now() - sepsisTimerStart);
+  }, 1000);
+}
+
+function renderPatternBlock(pattern) {
+  if (!pattern) return '';
+  const mortCls = pattern.mortalityPct > 50 ? 'bad' : pattern.mortalityPct < 40 ? 'good' : '';
+  return `<div class="pattern-match">
+    <div class="pattern-head">⚡ MIMIC-III PATTERN MATCH</div>
+    <div class="pattern-count">${pattern.cases.toLocaleString()} similar cases analyzed</div>
+    <div class="pattern-row"><div class="l">Trajectory:</div><div class="v">${pattern.label}</div></div>
+    ${pattern.shockPct !== undefined ? `<div class="pattern-row"><div class="l">Shock progression:</div><div class="v">${pattern.shockPct}% within 6h</div></div>` : ''}
+    ${pattern.medianVasopressorHours !== undefined ? `<div class="pattern-row"><div class="l">Median vasopressor onset:</div><div class="v">${pattern.medianVasopressorHours}h</div></div>` : ''}
+    ${pattern.dialysisPct !== undefined ? `<div class="pattern-row"><div class="l">Dialysis requirement:</div><div class="v">${pattern.dialysisPct}%</div></div>` : ''}
+    ${pattern.recoveryPct !== undefined ? `<div class="pattern-row"><div class="l">Recovery rate:</div><div class="v">${pattern.recoveryPct}%</div></div>` : ''}
+    ${pattern.medianICUDays !== undefined ? `<div class="pattern-row"><div class="l">Median ICU days:</div><div class="v">${pattern.medianICUDays}</div></div>` : ''}
+    ${pattern.mortalityPct !== undefined ? `<div class="pattern-row"><div class="l">ICU mortality (matched cohort):</div><div class="v ${mortCls}">${pattern.mortalityPct}%</div></div>` : ''}
+  </div>`;
+}
+
+function deriveRiskFlags(pt, sofa, news2, labFindings) {
+  const flags = [];
+  const lactate = pt.labs.lactate[pt.labs.lactate.length - 1].v;
+  const creat = pt.labs.creatinine[pt.labs.creatinine.length - 1].v;
+  const creatRatio = creat / pt.labs.creatinine[0].v;
+  const wbc = pt.labs.wbc[pt.labs.wbc.length - 1].v;
+
+  if (lactate >= 4 || (pt.vitals.map < 65 && sofa.total >= 8)) {
+    flags.push({ key: 'septic_shock', severity: 'high', confidence: 92, evidence: `MAP ${pt.vitals.map}, lactate ${lactate}, SOFA ${sofa.total}`, action: 'Immediate vasopressor optimization and repeat perfusion labs within 1h.', citation: 'Surviving Sepsis Campaign 2021 - Septic Shock' });
+  }
+  if (sofa.total >= 2 && (lactate >= 2 || wbc >= 12 || pt.vitals.temp >= 38.3)) {
+    flags.push({ key: 'sepsis', severity: sofa.total >= 8 ? 'high' : 'medium', confidence: 88, evidence: `SOFA ${sofa.total}, Lactate ${lactate}, WBC ${wbc}`, action: 'Initiate sepsis bundle with source control and serial lactate.', citation: 'Surviving Sepsis Campaign 2021' });
+  }
+  if (creatRatio >= 1.5 || creat >= 2.0) {
+    flags.push({ key: 'aki', severity: creatRatio >= 2 ? 'high' : 'medium', confidence: 82, evidence: `Creatinine ratio ${creatRatio.toFixed(2)}x baseline`, action: 'Review nephrotoxins, optimize renal perfusion, and monitor urine output.', citation: 'KDIGO AKI Guidelines 2012/2024' });
+  }
+  const pf = pt.labs.pao2 / pt.vitals.fio2;
+  if (pf < 300) {
+    flags.push({ key: 'ards', severity: pf < 200 ? 'high' : 'medium', confidence: 76, evidence: `P/F ratio ${pf.toFixed(0)} on FiO2 ${pt.vitals.fio2}`, action: 'Apply lung-protective ventilation and reassess gas exchange trajectory.', citation: 'Berlin ARDS Definition 2012' });
+  }
+  if (!flags.length && labFindings.length) {
+    flags.push({ key: 'monitor', severity: 'low', confidence: 64, evidence: labFindings.map(f => f.message).join('; '), action: 'Continue close ICU trend monitoring and repeat labs per protocol.', citation: 'SOFA / ICU trend monitoring' });
+  }
+  return flags;
+}
+
+function renderRiskReport(pt, analysis) {
+  const body = document.getElementById('riskReportBody');
+  const exportBtn = document.getElementById('exportReportBtn');
+  explainState = {};
+
+  const { sofa, news2, labFindings, riskFlags } = analysis;
+  const riskKeys = riskFlags.map(f => f.key);
+  const showTimer = riskKeys.includes('sepsis') || riskKeys.includes('septic_shock');
+
+  const lactate = pt.labs.lactate[pt.labs.lactate.length - 1].v;
+  const creat = pt.labs.creatinine[pt.labs.creatinine.length - 1].v;
+  const creatRatio = creat / pt.labs.creatinine[0].v;
+  const pattern = matchMIMICPattern(sofa.total, lactate, creat, creatRatio);
+
+  let html = '';
+  if (showTimer) html += renderGoldenHourBlock();
+
+  html += riskFlags.map(flag => {
+    const decay = getDataDecay(pt.lastLabHoursAgo, flag.confidence);
+    return `<div class="risk-flag" id="risk-${flag.key}">
+      <div class="risk-flag-header">
+        <div class="risk-name">${flag.key.toUpperCase().replace(/_/g, ' ')}</div>
+        <div class="risk-confidence">${decay.confidence}%</div>
+        <div class="decay-badge ${decay.cls}">${decay.text}</div>
+        <div class="risk-severity ${flag.severity}">${flag.severity.toUpperCase()}</div>
+        <button class="explain-btn" id="explainBtn-${flag.key}" onclick="toggleExplain('${flag.key}')">[? EXPLAIN]</button>
+      </div>
+      <div class="risk-body">
+        <div><strong>Evidence:</strong> ${flag.evidence}</div>
+        <div class="risk-citation">${flag.citation}</div>
+        <div class="risk-action">${flag.action}</div>
+      </div>
+      <div class="explain-panel" id="explainPanel-${flag.key}"></div>
+    </div>`;
+  }).join('');
+
+  html += renderPatternBlock(pattern);
+  html += `<div class="safety-caveat">⚠ DECISION SUPPORT ONLY — NOT A CLINICAL DIAGNOSIS. Verify with fresh clinical data and physician judgment. SOFA=${sofa.total}, NEWS2=${news2.total}. ${labFindings.length ? `Flags: ${labFindings.map(f => f.message).join(' | ')}` : ''}</div>`;
+
+  body.innerHTML = html;
+  exportBtn.style.display = 'block';
+  if (showTimer) startGoldenHourTimer();
+}
+
+function extractNoteConcerns(parsedNotes) {
+  if (!parsedNotes || parsedNotes.error || parsedNotes.raw) return [];
+  const concerns = [];
+  if (Array.isArray(parsedNotes.vital_concerns)) concerns.push(...parsedNotes.vital_concerns);
+  if (Array.isArray(parsedNotes.active_problems)) concerns.push(...parsedNotes.active_problems);
+  return concerns.slice(0, 6);
+}
+
+function exportReportPDF() {
+  const tabReport = document.getElementById('tab-report');
+  tabReport.setAttribute('data-timestamp', new Date().toLocaleString());
+
+  const style = document.createElement('style');
+  style.id = 'print-styles';
+  style.textContent = `
+@media print {
+  body { background: white !important; color: black !important; }
+  .header, .sidebar, .pipeline-bar, .panel-tabs,
+  .right-panel, .chart-section { display: none !important; }
+  .left-panel { width: 100% !important; border: none !important; }
+  .tab-content { display: block !important; }
+  #tab-log, #tab-diff { display: none !important; }
+  #tab-report { display: block !important; }
+  .risk-flag {
+    border: 1px solid #ccc !important;
+    background: white !important;
+    break-inside: avoid;
+    margin-bottom: 16px;
+  }
+  .risk-flag-header { background: #f5f5f5 !important; }
+  .risk-severity.high { background: #ffe0e0 !important; color: #c00 !important; border-color: #c00 !important; }
+  .risk-severity.medium { background: #fff3e0 !important; color: #e65c00 !important; }
+  .risk-citation { background: #f9f0ff !important; border-left-color: #7c3aed !important; }
+  .risk-action { background: #e8f5e9 !important; border-color: #2e7d32 !important; }
+  .safety-caveat { background: #f5f5f5 !important; color: #333 !important; }
+  #tab-report::before {
+    content: "IGNISIA HC01 - ICU Diagnostic Risk Report";
+    display: block;
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    font-family: sans-serif;
+  }
+  #tab-report::after {
+    content: "⚠ DECISION SUPPORT ONLY - NOT A CLINICAL DIAGNOSIS | Generated by IGNISIA HC01 | " attr(data-timestamp);
+    display: block;
+    font-size: 10px;
+    color: #666;
+    margin-top: 20px;
+    border-top: 1px solid #ccc;
+    padding-top: 8px;
+    font-family: monospace;
+  }
+}
+`;
+  document.head.appendChild(style);
+  window.onafterprint = () => {
+    const st = document.getElementById('print-styles');
+    if (st) st.remove();
+    window.onafterprint = null;
+  };
+  window.print();
 }
 
 // ══════════════════════════════════════════════════
@@ -1798,35 +2965,35 @@ function renderSOFA(pt) {
     <div class="sofa-row">
       <div class="sofa-organ">${o.name}</div>
       <div class="sofa-bar-track">
-        <div class="sofa-bar-fill" style="width:${(sofa[o.key]/o.max)*100}%;background:${colorOf(sofa[o.key])}"></div>
+        <div class="sofa-bar-fill" data-score="${sofa[o.key]}" data-max="${o.max}" data-color="${colorOf(sofa[o.key])}"></div>
       </div>
-      <div class="sofa-score-val" style="color:${colorOf(sofa[o.key])}">${sofa[o.key]}</div>
+      <div class="sofa-score-val ${sofa[o.key] >= 3 ? 'report-red' : sofa[o.key] >= 1 ? 'report-amber' : 'report-green'}">${sofa[o.key]}</div>
     </div>
   `).join('') + `
     <div class="sofa-total">
-      <span style="color:var(--text2);font-size:10px;letter-spacing:0.1em">TOTAL SOFA</span>
-      <span class="sofa-total-val" style="color:${sofa.total >= 10 ? 'var(--red)' : sofa.total >= 6 ? 'var(--amber)' : 'var(--text)'}">${sofa.total}</span>
+      <span class="sofa-total-label">TOTAL SOFA</span>
+      <span class="sofa-total-val ${sofa.total >= 10 ? 'report-red' : sofa.total >= 6 ? 'report-amber' : 'report-text'}">${sofa.total}</span>
     </div>
-    <div style="font-size:8px;color:var(--text3);margin-top:4px;letter-spacing:0.1em">
-      MIMIC-IV predicted mortality: <span style="color:${mortality>=40?'var(--red)':mortality>=20?'var(--amber)':'var(--text2)'};font-weight:600">${mortality}%</span>
-      <span style="color:var(--text3)"> (n=${MIMIC_IV.icu_stays.toLocaleString()} ICU stays)</span>
+    <div class="sofa-mortality-note">
+      MIMIC-IV predicted mortality: <span class="${mortality>=40?'mortality-high':mortality>=20?'mortality-medium':'mortality-low'}">${mortality}%</span>
+      <span class="muted-inline"> (n=${MIMIC_IV.icu_stays.toLocaleString()} ICU stays)</span>
     </div>
   `;
   document.getElementById('sofaTotal').textContent = sofa.total;
-  document.getElementById('sofaTotal').style.color = sofa.total >= 6 ? 'var(--red)' : sofa.total >= 3 ? 'var(--amber)' : 'var(--green)';
+  document.getElementById('sofaTotal').className = `card-title-accent ${sofa.total >= 6 ? 'report-red' : sofa.total >= 3 ? 'report-amber' : 'report-green'}`;
 }
 
 function renderNEWS2(pt) {
   const n = calcNEWS2(pt);
   const numEl = document.getElementById('news2Number');
   numEl.textContent = n.total;
-  numEl.style.color = n.color;
+  numEl.className = `news2-number ${n.level==='HIGH'?'news2-color-high':n.level==='MEDIUM'?'news2-color-medium':'news2-color-low'}`;
   document.getElementById('news2Level').textContent = n.level;
-  document.getElementById('news2Level').style.color = n.color;
+  document.getElementById('news2Level').className = `news2-level ${n.level==='HIGH'?'report-red':n.level==='MEDIUM'?'report-amber':'report-green'}`;
   document.getElementById('news2Desc').textContent = n.desc;
   const bd = document.getElementById('news2Breakdown');
   bd.innerHTML = Object.entries(n.breakdown).map(([k,v]) =>
-    `<div class="news2-item" style="color:${v>=3?'var(--red)':v>=2?'var(--amber)':v>=1?'#ffcc00':'var(--text2)'}">${k}: ${v}</div>`
+    `<div class="news2-item ${v>=3?'news2-color-high':v>=2?'news2-color-medium':v>=1?'news2-color-low':'report-text'}">${k}: ${v}</div>`
   ).join('');
 }
 
@@ -1835,7 +3002,7 @@ function renderMeds(pt) {
   const list = document.getElementById('medList');
   list.innerHTML = conflicts.map(c => `
     <div class="med-item ${c.status}">
-      <div class="med-icon">${c.status==='conflict'?'⚠':'c.status'==='warn'?'⚡':'▸'}</div>
+      <div class="med-icon">${c.status==='conflict'?'⚠':c.status==='warn'?'⚡':'▸'}</div>
       <div>
         <div>${c.med}</div>
         ${c.conflict ? `<div class="${c.status==='conflict'?'conflict-label':'warn-label'}">${c.conflict}</div>` : ''}
@@ -1872,8 +3039,8 @@ function renderLabTable(pt) {
       : '—';
     return `<tr>
       <td>${d.label}</td>
-      <td><span class="${cls}">${latest.v}${isOut?' ⚠':''}</span> <span style="font-size:9px;color:var(--text3)">${d.ref.unit}</span></td>
-      <td style="color:var(--text3);font-size:9px">${d.ref.low}–${d.ref.high}</td>
+      <td><span class="${cls}">${latest.v}${isOut?' ⚠':''}</span> <span class="lab-unit-inline">${d.ref.unit}</span></td>
+      <td class="lab-ref-inline">${d.ref.low}–${d.ref.high}</td>
       <td>${trendIcon}</td>
     </tr>`;
   }).join('');
@@ -1883,11 +3050,25 @@ function renderChart(pt) {
   const ctx = document.getElementById('labChart').getContext('2d');
   if (labChart) labChart.destroy();
 
-  const labels = pt.labs.wbc.map(x => x.t);
-  const creatData = pt.labs.creatinine.map(x => ({
-    x: x.t, y: x.v,
-    ...(x.outlier ? {pointBackgroundColor:'var(--red)', pointRadius:8, pointStyle:'crossRot'} : {})
-  }));
+  const actualLabels = pt.labs.wbc.map(x => x.t);
+  const lastLabel = actualLabels[actualLabels.length - 1] || 'T';
+  const labels = [...actualLabels, `${lastLabel}+3h`, `${lastLabel}+6h`];
+
+  const wbcActual = pt.labs.wbc.map(x => x.v);
+  const lactActual = pt.labs.lactate.map(x => x.v);
+  const creatActual = pt.labs.creatinine.map(x => x.v);
+  const wbcSlope = linearRegressionSlope(wbcActual);
+  const lactSlope = linearRegressionSlope(lactActual);
+  const creatSlope = linearRegressionSlope(creatActual);
+
+  const wbcProjected = [wbcActual[wbcActual.length - 1] + wbcSlope, wbcActual[wbcActual.length - 1] + wbcSlope * 2];
+  const lactProjected = [lactActual[lactActual.length - 1] + lactSlope, lactActual[lactActual.length - 1] + lactSlope * 2];
+  const creatProjected = [creatActual[creatActual.length - 1] + creatSlope, creatActual[creatActual.length - 1] + creatSlope * 2];
+
+  const actualDataLength = actualLabels.length;
+  const wbcData = [...wbcActual, ...wbcProjected];
+  const lactData = [...lactActual, ...lactProjected];
+  const creatData = [...creatActual, ...creatProjected];
 
   labChart = new Chart(ctx, {
     type: 'line',
@@ -1896,23 +3077,47 @@ function renderChart(pt) {
       datasets: [
         {
           label: 'WBC (×10³/μL)',
-          data: pt.labs.wbc.map(x => x.v),
+          data: wbcData,
           borderColor: '#4fc3f7', backgroundColor: 'rgba(79,195,247,0.08)',
           tension: 0.3, pointRadius: 4,
+          pointStyle: wbcData.map((_, i) => i >= actualDataLength ? 'triangle' : 'circle'),
+          segment: {
+            borderDash: c => (c.p0DataIndex >= actualDataLength - 1 ? [5, 5] : [])
+          }
         },
         {
           label: 'Lactate (mmol/L)',
-          data: pt.labs.lactate.map(x => x.v),
+          data: lactData,
           borderColor: '#ffaa00', backgroundColor: 'rgba(255,170,0,0.08)',
           tension: 0.3, pointRadius: 4,
+          pointStyle: lactData.map((_, i) => i >= actualDataLength ? 'triangle' : 'circle'),
+          segment: {
+            borderDash: c => (c.p0DataIndex >= actualDataLength - 1 ? [5, 5] : [])
+          }
         },
         {
           label: 'Creatinine (mg/dL)',
-          data: pt.labs.creatinine.map(x => x.v),
+          data: creatData,
           borderColor: '#ff3355', backgroundColor: 'rgba(255,51,85,0.08)',
-          tension: 0.3, pointRadius: pt.labs.creatinine.map(x => x.outlier ? 8 : 4),
-          pointBackgroundColor: pt.labs.creatinine.map(x => x.outlier ? '#ff3355' : 'rgba(255,51,85,0.8)'),
-          pointStyle: pt.labs.creatinine.map(x => x.outlier ? 'crossRot' : 'circle'),
+          tension: 0.3,
+          pointRadius: creatData.map((_, i) => {
+            const out = pt.labs.creatinine[i]?.outlier;
+            if (out) return 8;
+            return i >= actualDataLength ? 4 : 4;
+          }),
+          pointBackgroundColor: creatData.map((_, i) => {
+            const out = pt.labs.creatinine[i]?.outlier;
+            if (out) return '#ff3355';
+            return 'rgba(255,51,85,0.8)';
+          }),
+          pointStyle: creatData.map((_, i) => {
+            const out = pt.labs.creatinine[i]?.outlier;
+            if (out) return 'crossRot';
+            return i >= actualDataLength ? 'triangle' : 'circle';
+          }),
+          segment: {
+            borderDash: c => (c.p0DataIndex >= actualDataLength - 1 ? [5, 5] : [])
+          }
         },
       ]
     },
@@ -1934,7 +3139,38 @@ function renderChart(pt) {
         x: { ticks: { color:'#4a5a6a', font:{family:'JetBrains Mono',size:9} }, grid: { color:'rgba(255,255,255,0.04)' } },
         y: { ticks: { color:'#4a5a6a', font:{family:'JetBrains Mono',size:9} }, grid: { color:'rgba(255,255,255,0.04)' }, beginAtZero: true }
       }
-    }
+    },
+    plugins: [{
+      id: 'projectionLine',
+      afterDraw(chart) {
+        const c = chart.ctx;
+        const xScale = chart.scales.x;
+        const chartArea = chart.chartArea;
+        const projectionX = xScale.getPixelForValue(actualDataLength - 1);
+        const nextX = xScale.getPixelForValue(actualDataLength);
+        const drawX = projectionX + (nextX - projectionX) / 2;
+        c.save();
+        c.strokeStyle = 'rgba(100,116,139,0.4)';
+        c.setLineDash([4,4]);
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(drawX, chartArea.top);
+        c.lineTo(drawX, chartArea.bottom);
+        c.stroke();
+        c.restore();
+        c.save();
+        c.fillStyle = 'rgba(100,116,139,0.6)';
+        c.font = '9px JetBrains Mono';
+        c.fillText('PROJECTED →', drawX + 4, chartArea.top + 12);
+        c.restore();
+      }
+    }]
+  });
+
+  renderVelocityPanel(pt, {
+    lactate6h: lactProjected[1],
+    creatinine6h: creatProjected[1],
+    wbc6h: wbcProjected[1]
   });
 }
 
@@ -1948,7 +3184,7 @@ function renderOutlierAlert(outliers, pt) {
   el.classList.add('visible');
   const o = outliers[0];
   const baseline = pt.labs[o.lab].slice(0,-1).map(x=>x.v).join('→');
-  txt.innerHTML = `<strong>${o.lab.toUpperCase()}</strong> value <strong style="color:var(--red)">${o.value}</strong> at ${o.timepoint} is statistically inconsistent with 72h trend <strong>${baseline}</strong> (Z=${o.z}, threshold=${CONFIG.OUTLIER_Z_THRESHOLD}). <strong>DIAGNOSIS HELD — Recommend confirmed redraw before updating assessment.</strong>`;
+  txt.innerHTML = `<strong>${o.lab.toUpperCase()}</strong> value <strong class="report-red">${o.value}</strong> at ${o.timepoint} is statistically inconsistent with 72h trend <strong>${baseline}</strong> (Z=${o.z}, threshold=${CONFIG.OUTLIER_Z_THRESHOLD}). <strong>DIAGNOSIS HELD — Recommend confirmed redraw before updating assessment.</strong>`;
 }
 
 function renderNotes(pt) {
@@ -2106,6 +3342,50 @@ function runLabMapper(pt) {
 
   logAgent('LAB', `Found ${findings.length} temporal risk flags`, findings.length > 0 ? 'warn' : 'success');
   setPipe(2, 'done');
+  return findings;
+}
+
+function getLabFindingsSnapshot(pt) {
+  const findings = [];
+  const { labs, refs } = pt;
+
+  for (const [key, arr] of Object.entries(labs)) {
+    if (!Array.isArray(arr) || arr.length < 2) continue;
+    const ref = refs[key];
+    if (!ref) continue;
+
+    const vals = arr.map(x => x.v);
+    const latest = vals[vals.length - 1];
+    const first = vals[0];
+    const delta = latest - first;
+    const pctChange = ((delta / first) * 100).toFixed(1);
+    const isRising = delta > 0;
+    const isHigh = latest > ref.high;
+
+    if (isHigh && isRising) {
+      findings.push({
+        lab: key,
+        severity: latest > ref.high * 2 ? 'critical' : 'elevated',
+        message: `${key.toUpperCase()} rising from ${first} → ${latest} ${ref.unit} (+${pctChange}%)`
+      });
+    } else if (key === 'lactate' && latest >= 2.0) {
+      findings.push({
+        lab: key,
+        severity: 'critical',
+        message: 'Lactate ≥2 mmol/L — tissue hypoperfusion threshold reached'
+      });
+    } else if (key === 'creatinine') {
+      const ratio = latest / first;
+      if (ratio >= 1.5) {
+        findings.push({
+          lab: key,
+          severity: ratio >= 2 ? 'critical' : 'elevated',
+          message: `Creatinine ${ratio.toFixed(1)}× baseline — AKI staging required`
+        });
+      }
+    }
+  }
+
   return findings;
 }
 
@@ -2374,6 +3654,18 @@ function loadPatient(id) {
 
   // Clear previous results
   resetOutputs();
+  devilModeVisible = false;
+  devilGeneratedForPatient = null;
+  const devilPanel = document.getElementById('devilPanel');
+  if (devilPanel) {
+    devilPanel.classList.remove('visible');
+    devilPanel.innerHTML = '<div class="empty-state">No counter-argument generated yet</div>';
+  }
+  const devilToggle = document.getElementById('devilToggle');
+  if (devilToggle) {
+    devilToggle.classList.remove('active');
+    devilToggle.textContent = '⚖ COUNTER-ARGUMENT';
+  }
 
   // Render static sections
   renderPatientCard(pt);
@@ -2429,6 +3721,20 @@ async function runFullDiagnostics() {
    'SOFA_NEWS2','CHIEF_AGENT'].forEach(a => setAgentDot(a, ''));
 
   const pt = currentPatient;
+  const sofa = calcSOFA(pt);
+  const news2 = calcNEWS2(pt);
+  const labFindingsSnapshot = getLabFindingsSnapshot(pt);
+  const riskFlags = deriveRiskFlags(pt, sofa, news2, labFindingsSnapshot);
+  lastAnalysisContext = {
+    sofa,
+    news2,
+    labFindings: labFindingsSnapshot,
+    riskFlags,
+    noteConcerns: extractNoteConcerns(pt.parsedFindings)
+  };
+  renderRiskReport(pt, lastAnalysisContext);
+  switchTab('report');
+
   logAgent('HC01', `=== DIAGNOSTIC RUN — ${pt.name} (${backendOnline?'BACKEND':'STANDALONE'}) ===`, 'success');
 
   if (backendOnline) {
@@ -2471,6 +3777,15 @@ async function runStandalonePipeline(pt, apiKey, btn) {
 
     setOrchStatus('SAFETY','active'); setOrchStatus('TEMPORAL','active');
     const labFindings = runLabMapper(pt);
+    const riskFlags = deriveRiskFlags(pt, sofa, news2, labFindings);
+    lastAnalysisContext = {
+      sofa,
+      news2,
+      labFindings,
+      riskFlags,
+      noteConcerns: extractNoteConcerns(parsedNotes)
+    };
+    renderRiskReport(pt, lastAnalysisContext);
     renderAlertStandalone(pt, labFindings, outliers);
     setOrchStatus('SAFETY','done'); setOrchStatus('TEMPORAL','done');
 
@@ -2508,6 +3823,7 @@ function renderAlertStandalone(pt, labFindings, outliers) {
 // RESET
 // ══════════════════════════════════════════════════
 function resetOutputs() {
+  resetUI();
   document.getElementById('synthesisOutput').innerHTML = '<span style="color:var(--text3)">Awaiting agent pipeline completion...</span>';
   document.getElementById('ragEvidence').innerHTML = '<div class="empty-state">Awaiting RAG retrieval</div>';
   document.getElementById('diffList').innerHTML = '<div class="empty-state">Awaiting Chief Agent synthesis</div>';
@@ -2515,6 +3831,37 @@ function resetOutputs() {
   document.getElementById('outlierAlert').classList.remove('visible');
   document.getElementById('agentLog').innerHTML = '';
   [1,2,3,4].forEach(n => setPipe(n, ''));
+}
+
+function resetUI() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  sepsisTimerStart = null;
+  sepsisActionsState = { antibiotics: false, cultures: false, fluids: false };
+  explainState = {};
+  devilModeVisible = false;
+  devilGeneratedForPatient = null;
+  lastAnalysisContext = null;
+
+  const reportBody = document.getElementById('riskReportBody');
+  if (reportBody) reportBody.innerHTML = '<div class="empty-state">Run diagnostics to generate risk report</div>';
+
+  const exportBtn = document.getElementById('exportReportBtn');
+  if (exportBtn) exportBtn.style.display = 'none';
+
+  const devilPanel = document.getElementById('devilPanel');
+  if (devilPanel) {
+    devilPanel.classList.remove('visible');
+    devilPanel.innerHTML = '<div class="empty-state">No counter-argument generated yet</div>';
+  }
+
+  const devilToggle = document.getElementById('devilToggle');
+  if (devilToggle) {
+    devilToggle.classList.remove('active');
+    devilToggle.textContent = '⚖ COUNTER-ARGUMENT';
+  }
 }
 
 function resetAll() {
