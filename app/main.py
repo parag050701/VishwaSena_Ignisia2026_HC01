@@ -3,10 +3,13 @@
 import base64
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import data
@@ -83,6 +86,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─── Serve frontend ──────────────────────────────────────────────────────────
+
+_FRONTEND = Path(__file__).resolve().parent.parent / "hc01-icu-assistant.html"
+
+@app.get("/", include_in_schema=False)
+async def serve_ui():
+    return FileResponse(_FRONTEND)
 
 
 # ─── Health & status ─────────────────────────────────────────────────────────
