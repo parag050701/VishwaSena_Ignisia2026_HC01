@@ -1427,7 +1427,8 @@ function handleWSMessage(msg) {
     case 'pipeline_complete':
       setPipe(5, 'done'); setPipe(6, 'done');
       updateTopBarScores(msg.sofa_total, msg.news2_total, msg.alert_level);
-      state.lastDiag.sofa = msg.sofa_total;
+      // Don't overwrite full SOFA object if already set by SOFA_NEWS2 agent
+      if (!state.lastDiag.sofa) state.lastDiag.sofa = msg.sofa_total;
       state.lastDiag.news2 = msg.news2_total;
       state.lastDiag.alertLevel = msg.alert_level;
       pipelineDone();
@@ -1469,7 +1470,7 @@ function handleAgentResult(agent, data) {
       if (data) {
         const s = data.sofa, n = data.news2;
         if (s) {
-          state.lastDiag.sofa = s.total;
+          state.lastDiag.sofa = s;        // store full object for assistant context
           renderSofaBreakdown(s);
           updateTopBarScores(s.total, n?.total, null);
           updateStatCard('scSofa', s.total,
@@ -2136,17 +2137,26 @@ async function sendAsstQuery() {
   const thinkEl = asstAddMsg('⏳ Analyzing ward data…', 'asst-bot');
 
   try {
-    // Build diagnostics context to pass when a patient is loaded
-    const diagContext = (state.lastDiag && (state.lastDiag.sofa || state.lastDiag.handover)) ? {
-      sofa:         state.lastDiag.sofa,
-      news2:        state.lastDiag.news2,
-      alertLevel:   state.lastDiag.alertLevel,
-      handover:     state.lastDiag.handover,
-      trajectory:   state.lastDiag.trajectory,
-      outliers:     state.lastDiag.outliers,
-      medConflicts: state.lastDiag.medConflicts,
-      alerts:       state.lastDiag.alerts,
-    } : null;
+    // Build diagnostics context — safe serialisation, never crashes query
+    let diagContext = null;
+    try {
+      if (state.lastDiag && (state.lastDiag.sofa || state.lastDiag.handover)) {
+        diagContext = {
+          sofa:         state.lastDiag.sofa,
+          news2:        state.lastDiag.news2,
+          alertLevel:   state.lastDiag.alertLevel,
+          handover:     typeof state.lastDiag.handover === 'string' ? state.lastDiag.handover.substring(0, 500) : null,
+          outliers:     Array.isArray(state.lastDiag.outliers) ? state.lastDiag.outliers.slice(0, 10) : null,
+          medConflicts: Array.isArray(state.lastDiag.medConflicts) ? state.lastDiag.medConflicts.slice(0, 5) : null,
+          alerts:       Array.isArray(state.lastDiag.alerts) ? state.lastDiag.alerts.slice(0, 5) : null,
+        };
+        // Verify it serialises cleanly
+        JSON.stringify(diagContext);
+      }
+    } catch(serErr) {
+      console.warn('diagContext serialisation failed, omitting:', serErr);
+      diagContext = null;
+    }
     const r = await fetch(`${API}/api/assistant/query`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
@@ -2162,17 +2172,21 @@ async function sendAsstQuery() {
     asstAddMsg(escHtml(d.answer || 'No answer available'), 'asst-bot');
     status.textContent = 'Ready';
 
-    // Execute action
-    if (d.action === 'load_patient' && d.action_data?.fhir_id) {
-      const fid = d.action_data.fhir_id;
-      asstAddMsg(`<em>Loading patient ${escHtml(fid)}…</em>`, 'asst-sys');
-      if (state.currentView === 'ward') switchView('patient');
-      await onPatientChange(fid);
-    } else if (d.action === 'show_priority') {
-      switchView('ward');
-    } else if (d.action === 'run_diagnostics') {
-      if (state.currentView === 'ward') switchView('patient');
-      runDiagnostics();
+    // Execute action (isolated — errors here must NOT kill the assistant)
+    try {
+      if (d.action === 'load_patient' && d.action_data?.fhir_id) {
+        const fid = d.action_data.fhir_id;
+        asstAddMsg(`<em>Loading patient ${escHtml(fid)}…</em>`, 'asst-sys');
+        if (state.currentView === 'ward') switchView('patient');
+        onPatientChange(fid);  // fire-and-forget, don't await
+      } else if (d.action === 'show_priority') {
+        switchView('ward');
+      } else if (d.action === 'run_diagnostics') {
+        if (state.currentView === 'ward') switchView('patient');
+        runDiagnostics();
+      }
+    } catch(actionErr) {
+      console.warn('Assistant action error (non-fatal):', actionErr);
     }
 
     // TTS response

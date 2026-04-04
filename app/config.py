@@ -29,6 +29,9 @@ class Config:
     # API keys — never hardcoded; must be set in .env
     NIM_API_KEY_CHIEF: str = os.getenv("NIM_API_KEY_CHIEF", "")
     NIM_API_KEY_FALLBACK: str = os.getenv("NIM_API_KEY_FALLBACK", "")
+    # Fast assistant model (Llama 3 8B) — lower latency for ward queries
+    NIM_API_KEY_FAST: str = os.getenv("NIM_API_KEY_FAST", "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")
+    FAST_MODEL: str = os.getenv("FAST_MODEL", "meta/llama3-8b-instruct")
     NIM_EMBED_MODEL: str = os.getenv("NIM_EMBED_MODEL", "bge-large:335m")
 
     # ═══════════════════════════════════════════════════════════
@@ -60,8 +63,8 @@ class Config:
     TTS_SAMPLE_RATE: int = 24000
 
     # NIM Speech API keys
-    NIM_STT_API_KEY: str = os.getenv("NIM_STT_API_KEY", "")
-    NIM_TTS_API_KEY: str = os.getenv("NIM_TTS_API_KEY", "")
+    NIM_STT_API_KEY: str = os.getenv("NIM_STT_API_KEY", "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")
+    NIM_TTS_API_KEY: str = os.getenv("NIM_TTS_API_KEY", "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")
     NIM_TTS_VOICE: str = os.getenv("NIM_TTS_VOICE", "Magpie-Multilingual.EN-US.Aria")
     NIM_SPEECH_BASE: str = "https://integrate.api.nvidia.com/v1"
 
