@@ -102,34 +102,33 @@ async def synthesize_speech(
     speed: float = 1.0,
 ) -> Optional[bytes]:
     """
-    Synthesize text to WAV bytes.
-    Tries: Kokoro → pyttsx3 → None (text-only fallback).
+    Synthesize text to MP3 bytes using edge-tts (Microsoft neural voices).
+    Falls back to pyttsx3 if edge-tts is unavailable.
     """
     async with _tts_lock:
-        # ── Try Kokoro ────────────────────────────────────────────────────
+        # ── Edge TTS (Microsoft neural — high quality, free) ─────────────
         try:
-            from kokoro import generate as kokoro_generate  # type: ignore
-            voice_id = "af" if "female" in voice else "am"
-            audio, sample_rate = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: kokoro_generate(text, voice=voice_id, speed=speed),
-            )
-            # Convert numpy array to WAV bytes
-            import io, wave, numpy as np
-            buf = io.BytesIO()
-            with wave.open(buf, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)  # 16-bit
-                wf.setframerate(sample_rate)
-                pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
-                wf.writeframes(pcm.tobytes())
-            return buf.getvalue()
-        except ImportError:
-            pass  # Kokoro not installed
-        except Exception as exc:
-            log.warning("Kokoro TTS failed: %s", exc)
+            import edge_tts  # type: ignore
+            import io
 
-        # ── Try pyttsx3 ───────────────────────────────────────────────────
+            voice_name = "en-US-AriaNeural" if "female" in voice else "en-US-GuyNeural"
+            rate_pct = f"+{int((speed - 1.0) * 100)}%" if speed >= 1.0 else f"{int((speed - 1.0) * 100)}%"
+            communicate = edge_tts.Communicate(text, voice=voice_name, rate=rate_pct)
+
+            buf = io.BytesIO()
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    buf.write(chunk["data"])
+            audio_bytes = buf.getvalue()
+            if audio_bytes:
+                log.info("edge-tts: synthesized %d bytes", len(audio_bytes))
+                return audio_bytes
+        except ImportError:
+            pass
+        except Exception as exc:
+            log.warning("edge-tts TTS failed: %s", exc)
+
+        # ── pyttsx3 fallback ──────────────────────────────────────────────
         try:
             import pyttsx3  # type: ignore
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -141,7 +140,6 @@ async def synthesize_speech(
                 engine.setProperty("rate", rate)
                 voices = engine.getProperty("voices")
                 if voices:
-                    # Pick female/male voice
                     for v in voices:
                         if "female" in v.name.lower() and "female" in voice:
                             engine.setProperty("voice", v.id)

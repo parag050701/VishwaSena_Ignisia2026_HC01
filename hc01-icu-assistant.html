@@ -1569,44 +1569,93 @@ function finalizeSynthesis(fullText) {
 }
 
 function renderAICard(synthesis, alertLevel) {
-  const body = document.getElementById('aiBody');
+  const body    = document.getElementById('aiBody');
   const titleEl = document.getElementById('aiTitle');
-  const subEl = document.getElementById('aiSub');
+  const subEl   = document.getElementById('aiSub');
+  if (!synthesis) return;
 
-  // Extract primary diagnosis line
-  const caMatch = synthesis.match(/CLINICAL ASSESSMENT[:\s]+(.+?)(?:\n|$)/i);
-  const firstLine = caMatch ? caMatch[1].trim() : 'Clinical assessment complete';
+  // Helper: strip template placeholder lines the model echoes back
+  function cleanLines(text, isBullet) {
+    const TEMPLATE_NOISE = /^(\d+\s+sentence|list\s+(with|action|of)|bullet\s+list|narrat|plain\s+english|sentence\d|2-3\s+sentence|\[|\])/i;
+    return text.split('\n')
+      .map(l => isBullet ? l.replace(/^[-•*·\d.]+\s*/, '').trim() : l.trim())
+      .filter(l => l.length > 8 && !TEMPLATE_NOISE.test(l));
+  }
 
-  // Extract key concerns / reasons
-  const concernMatch = synthesis.match(/KEY CONCERNS[:\s]+([\s\S]+?)(?:OUTLIER FLAGS|RECOMMENDED ACTIONS|SHIFT HANDOVER|$)/i);
-  const concerns = concernMatch
-    ? concernMatch[1].split('\n').map(l => l.replace(/^[-•*·\d\.]+\s*/, '').trim()).filter(l => l.length > 5).slice(0, 4)
-    : [];
+  // ── Extract CLINICAL ASSESSMENT (full paragraph, skip template header) ─────
+  const caBlock = synthesis.match(/CLINICAL ASSESSMENT[:\s]*\n?([\s\S]+?)(?:\n[A-Z][A-Z\s]{3,}:|$)/i);
+  const caLines = caBlock ? cleanLines(caBlock[1], false) : [];
+  const firstSentence = caLines.length
+    ? caLines[0].replace(/^Sentence\d+:\s*/i, '')
+    : 'Clinical assessment complete';
 
-  // Extract recommended actions
-  const actMatch = synthesis.match(/RECOMMENDED ACTIONS[:\s]+([\s\S]+?)(?:SHIFT HANDOVER|SAFETY DISCLAIMER|$)/i);
-  const actions = actMatch
-    ? actMatch[1].split('\n').map(l => l.replace(/^[-•*·\d\.]+\s*/, '').trim()).filter(l => l.length > 5).slice(0, 3)
+  // ── Extract KEY CONCERNS (bullet list with citations) ─────────────────────
+  const concBlock = synthesis.match(/KEY CONCERNS[^:\n]*[:\s]*\n?([\s\S]+?)(?:\n[A-Z][A-Z\s]{3,}:|---|\n\n[A-Z]|$)/i);
+  const concerns  = concBlock ? cleanLines(concBlock[1], true).slice(0, 5) : [];
+
+  // ── Extract RECOMMENDED ACTIONS (with urgency tags) ───────────────────────
+  const actBlock = synthesis.match(/RECOMMENDED ACTIONS[^:\n]*[:\s]*\n?([\s\S]+?)(?:\nSHIFT HANDOVER|\nSAFETY DISCLAIMER|---|$)/i);
+  const actions  = actBlock ? cleanLines(actBlock[1], true).slice(0, 5) : [];
+
+  // ── Extract DIFFERENTIAL DIAGNOSIS ────────────────────────────────────────
+  const diffBlock = synthesis.match(/DIFFERENTIAL DIAGNOSIS[^:\n]*[:\s]*\n?([\s\S]+?)(?:\n[A-Z][A-Z\s]{3,}:|$)/i);
+  const diffs = diffBlock
+    ? diffBlock[1].split('\n')
+        .map(l => l.replace(/^\d+\.\s*/, '').trim())
+        .filter(l => l.length > 5 && /\d+%/.test(l))
+        .slice(0, 3)
     : [];
 
   titleEl.textContent = alertLevel === 'CRITICAL' ? '⚠️ High Risk — Immediate Action Required' :
     alertLevel === 'WARNING' ? '⚠️ Elevated Risk — Monitor Closely' : '✓ Assessment Complete';
-  subEl.textContent = firstLine.substring(0, 120) + (firstLine.length > 120 ? '…' : '');
+  subEl.textContent = firstSentence.substring(0, 160) + (firstSentence.length > 160 ? '…' : '');
 
-  const conf = alertLevel === 'CRITICAL' ? 92 : alertLevel === 'WARNING' ? 78 : 65;
+  const conf = alertLevel === 'CRITICAL' ? 94 : alertLevel === 'WARNING' ? 81 : 72;
+
+  function urgencyTag(text) {
+    if (/IMMEDIATE/i.test(text)) return '<span style="background:#fef2f2;color:#dc2626;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px">IMMEDIATE</span>';
+    if (/URGENT/i.test(text))    return '<span style="background:#fffbeb;color:#d97706;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px">URGENT</span>';
+    if (/ROUTINE/i.test(text))   return '<span style="background:#f0fdf4;color:#16a34a;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px">ROUTINE</span>';
+    return '';
+  }
+
   body.innerHTML = `
-    <div class="ai-confidence">
+    <div class="ai-confidence" title="AI Confidence: ${conf}%">
       <div class="ai-confidence-fill" style="width:${conf}%"></div>
     </div>
-    <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">AI Confidence: ${conf}%</div>
-    ${concerns.length ? `
-      <div class="ai-reasons">
-        ${concerns.map(c => `<div class="ai-reason"><div class="ai-reason-icon">⚕️</div><div>${c}</div></div>`).join('')}
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">AI Confidence: ${conf}% &nbsp;·&nbsp; Nemotron-3 120B</div>
+
+    ${diffs.length ? `
+      <div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Differential Diagnosis</div>
+        ${diffs.map(d => {
+          const confMatch = d.match(/(\d+)%/);
+          const pct = confMatch ? parseInt(confMatch[1]) : 50;
+          const color = pct >= 70 ? 'var(--red)' : pct >= 40 ? 'var(--amber)' : 'var(--text-3)';
+          return `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;font-size:12px">
+            <span style="color:${color};font-weight:700;min-width:36px">${pct}%</span>
+            <span style="color:var(--text-2)">${escHtml(d.replace(/\s*—\s*\d+%.*/, '').replace(/^\d+\.\s*/,''))}</span>
+          </div>`;
+        }).join('')}
       </div>` : ''}
+
+    ${concerns.length ? `
+      <div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Key Concerns</div>
+        <div class="ai-reasons">
+          ${concerns.map(c => `<div class="ai-reason"><div class="ai-reason-icon">⚕️</div><div style="font-size:12px">${escHtml(c)}</div></div>`).join('')}
+        </div>
+      </div>` : ''}
+
     ${actions.length ? `
-      <div class="ai-actions-title">Recommended Actions</div>
-      ${actions.map(a => `<div class="ai-action-item"><div class="ai-action-dot"></div><div>${a}</div></div>`).join('')}
-    ` : ''}
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Recommended Actions</div>
+        ${actions.map(a => `
+          <div class="ai-action-item" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;font-size:12px">
+            <div class="ai-action-dot" style="margin-top:4px;flex-shrink:0"></div>
+            <div style="flex:1">${escHtml(a.replace(/\s*—\s*(IMMEDIATE|URGENT|ROUTINE).*/i,''))}${urgencyTag(a)}</div>
+          </div>`).join('')}
+      </div>` : ''}
   `;
   document.getElementById('speakBtn').style.display = 'flex';
 }
@@ -1807,21 +1856,36 @@ async function analyzeFromWard(fhirId) {
 
 // ── VOICE ────────────────────────────────────────────
 async function speakSynthesis() {
-  if (!state.synthesisAccum) return;
+  // Prefer synthesisAccum (full report), fallback to current AI card text
+  const text = state.synthesisAccum || document.getElementById('aiSub')?.textContent || '';
+  if (!text.trim()) return;
+  const btn = document.getElementById('speakBtn') || document.querySelector('.btn-speak');
+  if (btn) { btn.textContent = '🔊 Speaking…'; btn.disabled = true; }
   try {
     const r = await fetch(`${API}/api/voice/synthesize`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ text: state.synthesisAccum.substring(0, 1000) })
+      body: JSON.stringify({ text: text.substring(0, 1200) })
     });
     const d = await r.json();
-    if (!d.available || !d.audio_b64) { console.warn('TTS unavailable:', d.message); return; }
+    if (!d.available || !d.audio_b64) {
+      console.warn('TTS unavailable:', d.message);
+      if (btn) { btn.textContent = '🔊 Read Aloud'; btn.disabled = false; }
+      return;
+    }
     const bytes = Uint8Array.from(atob(d.audio_b64), c => c.charCodeAt(0));
-    const blob = new Blob([bytes], { type: 'audio/wav' });
+    // edge-tts returns MP3; detect by magic bytes (0xFF 0xF3 or 0xFF 0xFB or ID3)
+    const isMp3 = bytes[0] === 0xFF || (bytes[0] === 0x49 && bytes[1] === 0x44); // FF or "ID"
+    const mime = isMp3 ? 'audio/mpeg' : 'audio/wav';
+    const blob = new Blob([bytes], { type: mime });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.play();
-    audio.onended = () => URL.revokeObjectURL(url);
-  } catch (e) { console.error('TTS error:', e); }
+    audio.onended = () => { URL.revokeObjectURL(url); if (btn) { btn.textContent = '🔊 Read Aloud'; btn.disabled = false; } };
+    audio.onerror = () => { if (btn) { btn.textContent = '🔊 Read Aloud'; btn.disabled = false; } };
+  } catch (e) {
+    console.error('TTS error:', e);
+    if (btn) { btn.textContent = '🔊 Read Aloud'; btn.disabled = false; }
+  }
 }
 
 // ── STT RECORDING ────────────────────────────────────────

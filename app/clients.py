@@ -166,6 +166,7 @@ class NIMClient:
         max_tokens: int = 1024,
         on_chunk: Optional[Callable] = None,
         temperature: float = 0.3,
+        extra_body: Optional[Dict] = None,
     ) -> str:
         if not api_key:
             raise RuntimeError(
@@ -177,13 +178,15 @@ class NIMClient:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
+        payload: Dict = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
         }
+        if extra_body:
+            payload.update(extra_body)
 
         last_exc: Exception = RuntimeError("NIM request not attempted")
         for attempt in range(cfg.NIM_RETRY_ATTEMPTS + 1):
