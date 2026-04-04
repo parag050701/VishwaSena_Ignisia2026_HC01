@@ -209,14 +209,20 @@ class DiagnoseHTTPResponse(BaseModel):
     news2_total:  int
     sofa:         Optional[Dict] = None
     news2:        Optional[Dict] = None
+    disease_timeline: List[Dict] = []
+    timeline_str: str = ""
     lab_findings: List[Dict]
     alerts:       List[Dict]
     med_conflicts: List[Dict]
     outliers:     List[Dict]
     trajectory:   Dict
     parsed_notes: Optional[Dict] = None
+    family_communication: Optional[Dict] = None
+    diagnosis_hold: bool = False
+    hold_reasons: List[str] = []
     council_consult: Optional[str] = None
     council_status: Optional[str] = None
+    safety_disclaimer: str = ""
 
 
 async def _maybe_council_consult(
@@ -275,11 +281,14 @@ async def diagnose_http(req: DiagnoseHTTPRequest) -> Dict[str, Any]:
         "outliers":         ctx.outliers,
         "trajectory":       ctx.trajectory,
         "parsed_notes":     ctx.parsed_notes,
+        "family_communication": ctx.family_communication,
+        "diagnosis_hold":   ctx.diagnosis_hold,
+        "hold_reasons":     ctx.hold_reasons,
         "council_consult":  council_data["council_consult"],
         "council_status":   council_data["council_status"],
         "safety_disclaimer": (
             "DECISION-SUPPORT ONLY. All outputs must be verified by a qualified clinician. "
-            "This system does NOT provide clinical diagnoses."
+            "This system does NOT provide clinical diagnoses. Held diagnoses require confirmed laboratory redraws."
         ),
     }
 
@@ -627,11 +636,167 @@ async def fhir_local_diagnose(
         "handover":          ctx.handover,
         "council_consult":   council_data["council_consult"],
         "council_status":    council_data["council_status"],
+        "family_communication": ctx.family_communication,
+        "diagnosis_hold":    ctx.diagnosis_hold,
+        "hold_reasons":      ctx.hold_reasons,
         "safety_disclaimer": (
             "DECISION-SUPPORT ONLY. All outputs must be verified by a qualified clinician. "
             "This system does NOT provide clinical diagnoses. Held diagnoses require confirmed laboratory redraws."
         ),
     }
+
+
+# ─── Priority queue (SOFA-ranked) ────────────────────────────────────────────
+
+@app.get("/api/priority-queue", tags=["Clinical"])
+async def priority_queue() -> List[Dict[str, Any]]:
+    """
+    Return all patients ranked by SOFA score (highest = most critical).
+    Each entry: fhir_id, name, sofa, news2, alert_level, admit_diag, mortality_pct.
+    """
+    from .scoring import calc_sofa, calc_news2
+    from .data import MIMIC_IV
+
+    store = get_local_store()
+    summaries = store.list_patient_summaries()
+    ranked = []
+    for s in summaries:
+        fhir_id = s["fhir_id"]
+        pt = store.to_patient_data(fhir_id)
+        if pt is None:
+            continue
+        sofa  = calc_sofa(pt)
+        news2 = calc_news2(pt)
+        mortality = MIMIC_IV.get("sofa_mortality", {}).get(str(min(sofa["total"], 15)), "?")
+        alert = (
+            "CRITICAL" if sofa["total"] >= 10 or news2["level"] == "HIGH" else
+            "WARNING"  if sofa["total"] >= 6  or news2["level"] == "MEDIUM" else
+            "STABLE"
+        )
+        ranked.append({
+            "fhir_id":      fhir_id,
+            "name":         pt.name,
+            "age":          pt.age,
+            "sex":          pt.sex,
+            "admit_diag":   pt.admitDiag,
+            "sofa":         sofa["total"],
+            "news2":        news2["total"],
+            "news2_level":  news2["level"],
+            "alert_level":  alert,
+            "mortality_pct": mortality,
+            "days_icu":     pt.daysInICU,
+        })
+    ranked.sort(key=lambda x: (x["sofa"], x["news2"]), reverse=True)
+    return ranked
+
+
+# ─── Natural-language assistant query ────────────────────────────────────────
+
+class AssistantQueryRequest(BaseModel):
+    query: str
+    context_patient: Optional[str] = None   # fhir_id of currently viewed patient
+
+class AssistantQueryResponse(BaseModel):
+    intent:      str
+    answer:      str
+    action:      Optional[str] = None        # "load_patient" | "show_priority" | "run_diagnostics"
+    action_data: Optional[Dict] = None
+    tts_text:    str
+
+@app.post("/api/assistant/query", tags=["Assistant"])
+async def assistant_query(req: AssistantQueryRequest) -> AssistantQueryResponse:
+    """
+    Natural-language query against the ward data.
+    Returns structured answer + optional UI action + TTS-ready text.
+    """
+    from .scoring import calc_sofa, calc_news2
+    from .data import MIMIC_IV
+
+    store   = get_local_store()
+    pts     = store.list_patient_summaries()
+    nim_key = cfg.nim_key("fallback")
+
+    # Build a compact ward snapshot for the LLM
+    ranked_snap = []
+    for s in pts:
+        pt = store.to_patient_data(s["fhir_id"])
+        if pt is None:
+            continue
+        sofa  = calc_sofa(pt)
+        news2 = calc_news2(pt)
+        alert = ("CRITICAL" if sofa["total"] >= 10 or news2["level"] == "HIGH"
+                 else "WARNING" if sofa["total"] >= 6 else "STABLE")
+        ranked_snap.append({
+            "fhir_id": s["fhir_id"],
+            "name":    pt.name,
+            "age":     pt.age,
+            "diag":    pt.admitDiag,
+            "sofa":    sofa["total"],
+            "news2":   news2["total"],
+            "alert":   alert,
+            "bp":      f"{pt.vitals.bpSys}/{pt.vitals.bpDia}",
+            "hr":      pt.vitals.hr,
+            "spo2":    pt.vitals.spo2,
+            "lactate": next((v["v"] for v in reversed(pt.labs.get("lactate",[]) or []) if isinstance(v, dict)), None),
+        })
+    ranked_snap.sort(key=lambda x: x["sofa"], reverse=True)
+
+    snap_str = "\n".join(
+        f"  {i+1}. {r['name']} ({r['fhir_id']}) — SOFA {r['sofa']} / NEWS2 {r['news2']} — {r['alert']} — {r['diag']}"
+        f" — BP {r['bp']} HR {r['hr']} SpO2 {r['spo2']}%"
+        + (f" Lactate {r['lactate']} mmol/L" if r['lactate'] else "")
+        for i, r in enumerate(ranked_snap[:20])
+    )
+
+    messages = [
+        {"role": "system", "content": (
+            "You are HC01 Ward Assistant — a clinical triage AI. "
+            "Answer the clinician's query concisely using the ward snapshot below. "
+            "Respond ONLY with a JSON object: "
+            '{"intent":"<load_patient|show_priority|answer_question|run_diagnostics>", '
+            '"answer":"<plain English answer, max 3 sentences>", '
+            '"action":"<load_patient|show_priority|run_diagnostics|null>", '
+            '"action_data":{"fhir_id":"<id or null>"},'
+            '"tts_text":"<spoken version of answer, max 2 sentences>"}'
+            " No preamble."
+        )},
+        {"role": "user", "content":
+            f"Ward snapshot (SOFA-ranked):\n{snap_str}\n\n"
+            f"Currently viewing: {req.context_patient or 'none'}\n\n"
+            f"Query: {req.query}"
+        },
+    ]
+
+    raw = ""
+    if nim_key:
+        try:
+            raw = await nim.chat(cfg.FALLBACK_MODEL, messages, nim_key, max_tokens=300, temperature=0.2)
+        except Exception as e:
+            log.warning("Assistant LLM failed: %s", e)
+
+    # Parse JSON response
+    import re as _re
+    m = _re.search(r'\{[\s\S]*\}', raw)
+    if m:
+        try:
+            obj = json.loads(m.group())
+            return AssistantQueryResponse(**{k: obj.get(k) for k in AssistantQueryResponse.model_fields})
+        except Exception:
+            pass
+
+    # Fallback: rule-based for most-critical query
+    q_low = req.query.lower()
+    if any(w in q_low for w in ["critical", "worst", "most", "priority", "top"]):
+        top = ranked_snap[0] if ranked_snap else {}
+        ans = (f"The most critical patient is {top.get('name')} with SOFA {top.get('sofa')} "
+               f"and {top.get('alert')} status due to {top.get('diag')}.")
+        return AssistantQueryResponse(
+            intent="answer_question", answer=ans,
+            action="load_patient", action_data={"fhir_id": top.get("fhir_id")},
+            tts_text=ans,
+        )
+    ans = f"I found {len(ranked_snap)} patients. Top priority: {ranked_snap[0]['name']} SOFA {ranked_snap[0]['sofa']}." if ranked_snap else "No patients loaded."
+    return AssistantQueryResponse(intent="answer_question", answer=ans, tts_text=ans)
 
 
 # ─── Audit log endpoint ───────────────────────────────────────────────────────
