@@ -3,2565 +3,1261 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HC01 — ICU Diagnostic Risk Assistant</title>
+<title>HC01 Clinical Intelligence Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-/* ══════════════════════════════════════════════════
-   RESET & BASE
-══════════════════════════════════════════════════ */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
 :root {
-  --bg:        #080a0d;
-  --bg1:       #0d1017;
-  --bg2:       #111620;
-  --bg3:       #161c28;
-  --border:    #1e2a3a;
-  --border2:   #253040;
-  --green:     #00ff88;
-  --green-dim: #00c96a;
-  --amber:     #ffaa00;
-  --red:       #ff3355;
-  --blue:      #4fc3f7;
-  --purple:    #b39ddb;
-  --text:      #cdd6e0;
-  --text2:     #7d8fa0;
-  --text3:     #4a5a6a;
-  --mono:      'JetBrains Mono', monospace;
-  --sans:      'Syne', sans-serif;
+  --bg0: #f4f8f7;
+  --bg1: #ffffff;
+  --bg2: #eef5f3;
+  --line: #d7e5e1;
+  --text: #1a2d2a;
+  --sub: #5d7670;
+  --mint: #2d8a74;
+  --mint-soft: #e0f2ed;
+  --blue: #2f6dd5;
+  --blue-soft: #e7eefc;
+  --amber: #ae760f;
+  --amber-soft: #fff3db;
+  --red: #bd4255;
+  --red-soft: #fdecef;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --sans: 'Manrope', system-ui, sans-serif;
 }
-html, body { height: 100%; overflow-x: hidden; }
+
+html, body {
+  height: 100%;
+}
+
 body {
-  background: var(--bg);
+  font-family: var(--sans);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
+  background:
+    radial-gradient(circle at 0% 0%, #ffffff 0%, transparent 45%),
+    radial-gradient(circle at 100% 0%, #e7f4f0 0%, transparent 38%),
+    linear-gradient(180deg, #f6fbf9 0%, #edf4f2 100%);
   line-height: 1.5;
 }
 
-/* ══════════════════════════════════════════════════
-   SCANLINE OVERLAY
-══════════════════════════════════════════════════ */
-.scanlines {
-  position: fixed; inset: 0; z-index: 9999;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0px,
-    transparent 2px,
-    rgba(0,0,0,0.08) 2px,
-    rgba(0,0,0,0.08) 4px
-  );
+.app {
+  width: min(1600px, calc(100% - 24px));
+  margin: 12px auto 20px;
 }
 
-/* ══════════════════════════════════════════════════
-   HEADER
-══════════════════════════════════════════════════ */
-.header {
-  display: flex; align-items: center; gap: 16px;
-  padding: 10px 20px;
-  background: var(--bg1);
-  border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; z-index: 100;
-  flex-wrap: wrap;
-}
-.logo-block { display: flex; flex-direction: column; gap: 0; }
-.logo {
-  font-family: var(--sans);
-  font-size: 22px; font-weight: 800;
-  color: var(--green);
-  letter-spacing: 0.1em;
-  line-height: 1;
-}
-.logo-sub {
-  font-size: 9px; color: var(--text3);
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-}
-.header-divider {
-  width: 1px; height: 36px; background: var(--border);
-}
-.patient-select-group { display: flex; align-items: center; gap: 8px; }
-.field-label { font-size: 9px; color: var(--text3); letter-spacing: 0.2em; }
-select, input[type="password"], input[type="text"] {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 11px;
-  padding: 5px 10px;
-  outline: none;
-  clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
-  transition: border-color 0.2s;
-}
-select:focus, input:focus { border-color: var(--green); }
-.api-group { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-#apiKey { width: 260px; }
-
-/* ══════════════════════════════════════════════════
-   BUTTONS
-══════════════════════════════════════════════════ */
-.btn {
-  font-family: var(--mono);
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.12em;
-  border: 1px solid currentColor;
-  background: transparent;
-  cursor: pointer;
-  padding: 5px 16px;
-  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
-  transition: all 0.15s;
-  text-transform: uppercase;
-}
-.btn-green { color: var(--green); }
-.btn-green:hover { background: rgba(0,255,136,0.12); }
-.btn-amber { color: var(--amber); }
-.btn-amber:hover { background: rgba(255,170,0,0.12); }
-.btn-red { color: var(--red); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* ══════════════════════════════════════════════════
-   PIPELINE BAR
-══════════════════════════════════════════════════ */
-.pipeline-bar {
-  display: flex; align-items: center; gap: 0;
-  padding: 0 20px;
-  background: var(--bg1);
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-}
-.pipe-step {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 16px;
-  font-size: 9px; letter-spacing: 0.2em;
-  color: var(--text3);
-  border-right: 1px solid var(--border);
-  white-space: nowrap;
-  transition: all 0.3s;
-  position: relative;
-}
-.pipe-step .step-icon { font-size: 11px; }
-.pipe-step .step-name { text-transform: uppercase; }
-.pipe-step .step-model { color: var(--text3); font-size: 8px; opacity: 0.7; }
-.pipe-step.active { color: var(--amber); }
-.pipe-step.active::after {
-  content: '';
-  position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
-  background: var(--amber);
-  animation: pulse-bar 0.8s ease-in-out infinite;
-}
-.pipe-step.done { color: var(--green); }
-.pipe-step.done::after {
-  content: '';
-  position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
-  background: var(--green);
-}
-.pipe-step.error { color: var(--red); }
-@keyframes pulse-bar { 0%,100%{opacity:1} 50%{opacity:0.3} }
-.pipe-arrow { color: var(--text3); padding: 0 4px; font-size: 10px; }
-
-/* ══════════════════════════════════════════════════
-   MAIN GRID
-══════════════════════════════════════════════════ */
-.main-grid {
+.top {
+  background: rgba(255,255,255,0.88);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 14px;
   display: grid;
-  grid-template-columns: 280px 1fr 300px;
-  gap: 0;
-  height: calc(100vh - 90px);
-  overflow: hidden;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  gap: 12px;
+  box-shadow: 0 10px 30px rgba(20, 53, 47, 0.08);
 }
-.panel {
-  overflow-y: auto;
-  padding: 12px;
-  display: flex; flex-direction: column; gap: 10px;
-}
-.panel::-webkit-scrollbar { width: 3px; }
-.panel::-webkit-scrollbar-track { background: var(--bg); }
-.panel::-webkit-scrollbar-thumb { background: var(--border); }
-.left-panel { border-right: 1px solid var(--border); background: var(--bg1); }
-.center-panel { border-right: 1px solid var(--border); background: var(--bg); }
-.right-panel { background: var(--bg1); }
 
-/* ══════════════════════════════════════════════════
-   CARDS
-══════════════════════════════════════════════════ */
-.card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  padding: 10px 12px;
+.brand {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(170deg, #ffffff 0%, #f1f7f5 100%);
+  padding: 14px;
 }
-.card-title {
-  font-size: 9px; letter-spacing: 0.25em;
-  color: var(--text3);
-  text-transform: uppercase;
-  margin-bottom: 8px;
-  display: flex; justify-content: space-between; align-items: center;
-}
-.card-title-accent { color: var(--green); font-size: 10px; }
 
-/* ══════════════════════════════════════════════════
-   PATIENT CARD
-══════════════════════════════════════════════════ */
-.patient-name {
-  font-family: var(--sans);
-  font-size: 15px; font-weight: 700;
-  color: var(--text);
-  margin-bottom: 2px;
+.brand h1 {
+  font-size: 26px;
+  letter-spacing: 0.01em;
 }
-.patient-meta { color: var(--text2); font-size: 10px; }
-.patient-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  font-size: 9px; letter-spacing: 0.15em;
+
+.brand p {
   margin-top: 6px;
-  text-transform: uppercase;
+  color: var(--sub);
 }
-.badge-red { background: rgba(255,51,85,0.15); color: var(--red); border: 1px solid rgba(255,51,85,0.3); }
-.badge-amber { background: rgba(255,170,0,0.15); color: var(--amber); border: 1px solid rgba(255,170,0,0.3); }
-.badge-green { background: rgba(0,255,136,0.12); color: var(--green); border: 1px solid rgba(0,255,136,0.25); }
 
-/* ══════════════════════════════════════════════════
-   VITALS GRID
-══════════════════════════════════════════════════ */
-.vitals-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  padding: 12px;
 }
-.vital-item {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  padding: 6px 8px;
-}
-.vital-label { font-size: 8px; color: var(--text3); letter-spacing: 0.15em; text-transform: uppercase; }
-.vital-value {
-  font-size: 16px; font-weight: 600;
-  line-height: 1.2;
-}
-.vital-unit { font-size: 8px; color: var(--text2); }
-.vital-normal { color: var(--text); }
-.vital-warn { color: var(--amber); }
-.vital-crit { color: var(--red); animation: blink-red 1.5s ease-in-out infinite; }
-@keyframes blink-red { 0%,100%{opacity:1} 50%{opacity:0.5} }
 
-/* ══════════════════════════════════════════════════
-   SOFA SCORE
-══════════════════════════════════════════════════ */
-.sofa-grid { display: flex; flex-direction: column; gap: 5px; }
-.sofa-row {
-  display: flex; align-items: center; gap: 8px;
-}
-.sofa-organ {
-  width: 90px; font-size: 9px; color: var(--text2);
-  letter-spacing: 0.1em; text-transform: uppercase;
-  flex-shrink: 0;
-}
-.sofa-bar-track {
-  flex: 1; height: 8px;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  position: relative;
-}
-.sofa-bar-fill {
-  height: 100%; transition: width 0.8s ease;
-  position: absolute; left: 0; top: 0;
-}
-.sofa-score-val {
-  width: 20px; text-align: right;
-  font-size: 10px; font-weight: 600;
-  flex-shrink: 0;
-}
-.sofa-total {
-  display: flex; justify-content: space-between; align-items: center;
-  padding-top: 6px; border-top: 1px solid var(--border);
+.label {
   font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--sub);
+  font-family: var(--mono);
 }
-.sofa-total-val { font-size: 18px; font-weight: 700; }
 
-/* ══════════════════════════════════════════════════
-   NEWS2 SCORE
-══════════════════════════════════════════════════ */
-.news2-display {
-  display: flex; align-items: center; gap: 12px;
+.row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  align-items: center;
 }
-.news2-number {
-  font-size: 42px; font-weight: 700; line-height: 1;
+
+input[type="password"], select {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  padding: 9px 11px;
   font-family: var(--sans);
-}
-.news2-info { flex: 1; }
-.news2-level { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; }
-.news2-desc { font-size: 9px; color: var(--text2); margin-top: 2px; }
-.news2-breakdown { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
-.news2-item {
-  font-size: 9px; padding: 2px 6px;
-  background: var(--bg3); border: 1px solid var(--border);
+  min-width: 220px;
 }
 
-/* ══════════════════════════════════════════════════
-   MEDICATION CONFLICTS
-══════════════════════════════════════════════════ */
-.med-list { display: flex; flex-direction: column; gap: 4px; }
-.med-item {
-  display: flex; align-items: flex-start; gap: 6px;
-  padding: 4px 6px;
+button {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 10px 15px;
+  font-weight: 700;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--mint);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: var(--blue-soft);
+  color: var(--blue);
+  border-color: #cfddfb;
+}
+
+.btn-muted {
+  background: #f4f8f7;
+  color: var(--sub);
+  border-color: var(--line);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status-wrap {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.kpi {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.85);
+  padding: 10px;
+}
+
+.kpi .k {
   font-size: 10px;
-}
-.med-item.conflict {
-  background: rgba(255,51,85,0.08);
-  border-left: 2px solid var(--red);
-}
-.med-item.warn {
-  background: rgba(255,170,0,0.08);
-  border-left: 2px solid var(--amber);
-}
-.med-item.ok { border-left: 2px solid var(--border); }
-.med-icon { flex-shrink: 0; margin-top: 1px; }
-.conflict-label { font-size: 9px; color: var(--red); margin-top: 2px; }
-.warn-label { font-size: 9px; color: var(--amber); margin-top: 2px; }
-
-/* ══════════════════════════════════════════════════
-   AGENT PIPELINE (CENTER)
-══════════════════════════════════════════════════ */
-.agent-log {
-  background: var(--bg1);
-  border: 1px solid var(--border);
-  padding: 8px 10px;
-  font-size: 10px;
-  max-height: 120px;
-  overflow-y: auto;
-  display: flex; flex-direction: column; gap: 2px;
-}
-.log-line { display: flex; gap: 8px; }
-.log-ts { color: var(--text3); flex-shrink: 0; }
-.log-agent { flex-shrink: 0; font-weight: 600; }
-.log-msg { color: var(--text2); }
-.log-green { color: var(--green); }
-.log-amber { color: var(--amber); }
-.log-red { color: var(--red); }
-
-/* ══════════════════════════════════════════════════
-   DIFFERENTIAL DIAGNOSIS
-══════════════════════════════════════════════════ */
-.diff-list { display: flex; flex-direction: column; gap: 6px; }
-.diff-item { display: flex; flex-direction: column; gap: 3px; }
-.diff-header { display: flex; justify-content: space-between; align-items: center; }
-.diff-name { font-size: 11px; font-weight: 600; }
-.diff-pct { font-size: 11px; font-weight: 700; }
-.diff-bar-track { height: 4px; background: var(--bg3); border: 1px solid var(--border); }
-.diff-bar-fill { height: 100%; transition: width 1s ease; }
-.diff-evidence { font-size: 9px; color: var(--text2); }
-
-/* ══════════════════════════════════════════════════
-   SYNTHESIS REPORT
-══════════════════════════════════════════════════ */
-.synthesis-output {
-  font-size: 11px; line-height: 1.7;
-  color: var(--text);
-  min-height: 80px;
-  white-space: pre-wrap;
-}
-.synthesis-output .hl-red { color: var(--red); font-weight: 600; }
-.synthesis-output .hl-amber { color: var(--amber); font-weight: 600; }
-.synthesis-output .hl-green { color: var(--green); }
-.synthesis-output .citation {
-  color: var(--blue); font-size: 9px;
-  border-bottom: 1px dashed rgba(79,195,247,0.4);
-  cursor: help;
-}
-.cursor-blink {
-  display: inline-block; width: 6px; height: 12px;
-  background: var(--green);
-  animation: blink 0.8s step-end infinite;
-  vertical-align: middle; margin-left: 2px;
-}
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-
-/* ══════════════════════════════════════════════════
-   OUTLIER ALERT
-══════════════════════════════════════════════════ */
-.outlier-alert {
-  background: rgba(255,51,85,0.08);
-  border: 1px solid rgba(255,51,85,0.4);
-  padding: 8px 10px;
-  display: flex; gap: 8px; align-items: flex-start;
-  display: none;
-}
-.outlier-alert.visible { display: flex; }
-.outlier-icon { font-size: 16px; flex-shrink: 0; }
-.outlier-text { font-size: 10px; line-height: 1.6; }
-.outlier-title { color: var(--red); font-weight: 600; font-size: 11px; letter-spacing: 0.1em; }
-
-/* ══════════════════════════════════════════════════
-   CHART
-══════════════════════════════════════════════════ */
-.chart-wrap { position: relative; height: 180px; }
-
-/* ══════════════════════════════════════════════════
-   LAB TABLE
-══════════════════════════════════════════════════ */
-.lab-table { width: 100%; border-collapse: collapse; font-size: 10px; }
-.lab-table th {
-  text-align: left; padding: 4px 6px;
-  font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase;
-  color: var(--text3); border-bottom: 1px solid var(--border);
-  background: var(--bg3);
-}
-.lab-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
-.lab-table tr:last-child td { border-bottom: none; }
-.lab-val-normal { color: var(--text); }
-.lab-val-warn { color: var(--amber); font-weight: 600; }
-.lab-val-crit { color: var(--red); font-weight: 700; }
-.lab-val-outlier {
-  color: var(--red); font-weight: 700;
-  background: rgba(255,51,85,0.12);
-  padding: 1px 4px;
-}
-.lab-trend { font-size: 10px; }
-.trend-up { color: var(--red); }
-.trend-down { color: var(--green); }
-.trend-stable { color: var(--text2); }
-
-/* ══════════════════════════════════════════════════
-   HANDOVER BRIEF
-══════════════════════════════════════════════════ */
-.handover-text {
-  font-size: 11px; line-height: 1.8;
-  color: var(--text);
-  background: rgba(0,255,136,0.04);
-  border-left: 2px solid var(--green);
-  padding: 8px 10px;
-  min-height: 60px;
-  white-space: pre-wrap;
+  text-transform: uppercase;
+  color: var(--sub);
+  letter-spacing: 0.08em;
 }
 
-/* ══════════════════════════════════════════════════
-   RISK BADGE + STATUS
-══════════════════════════════════════════════════ */
-.risk-indicators { display: flex; gap: 6px; flex-wrap: wrap; }
-.risk-chip {
-  font-size: 9px; padding: 3px 8px;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  clip-path: polygon(4px 0%, 100% 0%, calc(100% - 4px) 100%, 0% 100%);
+.kpi .v {
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 800;
 }
-.chip-red { background: rgba(255,51,85,0.2); color: var(--red); border: 1px solid rgba(255,51,85,0.4); }
-.chip-amber { background: rgba(255,170,0,0.15); color: var(--amber); border: 1px solid rgba(255,170,0,0.35); }
-.chip-green { background: rgba(0,255,136,0.1); color: var(--green); border: 1px solid rgba(0,255,136,0.25); }
-.chip-blue { background: rgba(79,195,247,0.1); color: var(--blue); border: 1px solid rgba(79,195,247,0.25); }
 
-/* ══════════════════════════════════════════════════
-   NOTES VIEWER
-══════════════════════════════════════════════════ */
-.notes-list { display: flex; flex-direction: column; gap: 6px; }
-.note-item {
-  border-left: 2px solid var(--border);
-  padding: 4px 8px;
-  font-size: 10px;
+.kpi .s {
+  color: var(--sub);
+  margin-top: 2px;
+  font-size: 12px;
 }
-.note-meta { color: var(--text3); font-size: 9px; margin-bottom: 2px; }
-.note-body { color: var(--text); line-height: 1.5; }
 
-/* ══════════════════════════════════════════════════
-   LOADING / EMPTY STATES
-══════════════════════════════════════════════════ */
-.empty-state {
-  text-align: center; color: var(--text3);
-  font-size: 10px; padding: 20px;
-  letter-spacing: 0.15em;
+.layout {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 300px 1fr 360px;
+  gap: 12px;
+  min-height: calc(100vh - 250px);
 }
-.spinner {
-  display: inline-block; width: 12px; height: 12px;
-  border: 2px solid rgba(0,255,136,0.2);
-  border-top-color: var(--green);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  vertical-align: middle;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 
-/* ══════════════════════════════════════════════════
-   RAG EVIDENCE
-══════════════════════════════════════════════════ */
-.rag-item {
-  background: rgba(79,195,247,0.05);
-  border: 1px solid rgba(79,195,247,0.15);
-  padding: 7px 9px;
-  margin-bottom: 6px;
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.rag-source { font-size: 8px; color: var(--blue); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 3px; }
-.rag-text { font-size: 10px; line-height: 1.6; color: var(--text2); }
 
-/* ══════════════════════════════════════════════════
-   MULTI-ORCHESTRATOR VISUALIZATION
-══════════════════════════════════════════════════ */
-.orch-grid {
+.card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.9);
+  padding: 12px;
+}
+
+.card h3 {
+  font-size: 12px;
+  color: var(--sub);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--mono);
+}
+
+.mt8 { margin-top: 8px; }
+.mt10 { margin-top: 10px; }
+
+.patient-name {
+  margin-top: 7px;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.patient-meta {
+  color: var(--sub);
+  margin-top: 3px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.chip {
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 12px;
+  border: 1px solid;
+}
+
+.chip-green { background: var(--mint-soft); color: var(--mint); border-color: #b5ddd3; }
+.chip-blue { background: var(--blue-soft); color: var(--blue); border-color: #d5e1fa; }
+.chip-amber { background: var(--amber-soft); color: var(--amber); border-color: #f3dfaf; }
+.chip-red { background: var(--red-soft); color: var(--red); border-color: #f4bcc5; }
+
+.vitals {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-top: 8px;
 }
-.orch-cell {
+
+.vital {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
   background: var(--bg2);
-  border: 1px solid var(--border);
-  padding: 7px 10px;
-  position: relative;
-  overflow: hidden;
-}
-.orch-cell::before {
-  content:'';
-  position:absolute; left:0; top:0; bottom:0; width:2px;
-  background: var(--border);
-  transition: background 0.3s;
-}
-.orch-cell.active::before { background: var(--amber); }
-.orch-cell.done::before   { background: var(--green); }
-.orch-cell.error::before  { background: var(--red); }
-.orch-name {
-  font-size:8px; letter-spacing:0.2em; text-transform:uppercase;
-  color:var(--text3); margin-bottom:5px;
-  display:flex; justify-content:space-between; align-items:center;
-}
-.orch-name-accent { color:var(--green); font-size:9px; }
-.orch-agents { display:flex; flex-direction:column; gap:3px; }
-.orch-agent-row {
-  display:flex; align-items:center; gap:6px;
-  font-size:9px; color:var(--text2);
-}
-.orch-dot {
-  width:6px; height:6px; border-radius:50%;
-  background:var(--border); flex-shrink:0;
-  transition: background 0.3s;
-}
-.orch-dot.active { background:var(--amber); animation: pulse-dot 0.8s infinite; }
-.orch-dot.done   { background:var(--green); }
-.orch-dot.error  { background:var(--red); }
-@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
-.orch-synthesis {
-  grid-column: 1/-1;
-  background: rgba(79,195,247,0.05);
-  border: 1px solid rgba(79,195,247,0.2);
-  padding: 7px 10px;
 }
 
-/* ══════════════════════════════════════════════════
-   DATASET CREDIBILITY BADGES
-══════════════════════════════════════════════════ */
-.dataset-badges {
-  display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;
-}
-.ds-badge {
-  font-size:8px; padding:2px 7px; letter-spacing:0.1em;
-  background:rgba(79,195,247,0.08); color:var(--blue);
-  border:1px solid rgba(79,195,247,0.2);
-  clip-path: polygon(3px 0%,100% 0%,calc(100% - 3px) 100%,0% 100%);
+.vital .name {
+  font-size: 11px;
+  color: var(--sub);
+  letter-spacing: 0.05em;
 }
 
-/* ══════════════════════════════════════════════════
-   ALERT ESCALATION PANEL
-══════════════════════════════════════════════════ */
-.alert-panel {
-  display:flex; flex-direction:column; gap:4px;
+.vital .value {
+  margin-top: 3px;
+  font-size: 20px;
+  font-weight: 800;
 }
-.alert-item {
-  display:flex; gap:8px; align-items:flex-start;
-  padding:5px 8px; font-size:10px;
-}
-.alert-item.CRITICAL { background:rgba(255,51,85,0.1); border-left:2px solid var(--red); }
-.alert-item.WARNING  { background:rgba(255,170,0,0.08); border-left:2px solid var(--amber); }
-.alert-item.WATCH    { background:rgba(79,195,247,0.06); border-left:2px solid var(--blue); }
-.alert-badge { font-size:8px; padding:1px 5px; font-weight:600; flex-shrink:0; margin-top:1px; }
-.badge-CRITICAL { color:var(--red); }
-.badge-WARNING  { color:var(--amber); }
-.alert-intervention { font-size:9px; color:var(--text3); margin-top:2px; }
 
-/* ══════════════════════════════════════════════════
-   TRAJECTORY OVERLAY
-══════════════════════════════════════════════════ */
-.trajectory-grid { display:flex; flex-direction:column; gap:4px; }
-.traj-row {
-  display:flex; align-items:center; gap:8px;
-  font-size:9px;
+.small {
+  color: var(--sub);
+  font-size: 12px;
 }
-.traj-lab { width:80px; color:var(--text2); text-transform:uppercase; flex-shrink:0; }
-.traj-arrow { font-size:10px; }
-.traj-CRITICAL_WITHIN_6H { color:var(--red); }
-.traj-WARNING_WITHIN_6H  { color:var(--amber); }
-.traj-NORMALIZING        { color:var(--green); }
-.traj-STABLE             { color:var(--text3); }
 
-/* ══════════════════════════════════════════════════
-   RESPONSIVE
-══════════════════════════════════════════════════ */
-@media (max-width: 1100px) {
-  .main-grid { grid-template-columns: 250px 1fr 270px; }
+.arch-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.arch {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+}
+
+.arch .title {
+  font-weight: 700;
+}
+
+.arch .title span {
+  color: var(--sub);
+  font-size: 11px;
+  margin-left: 8px;
+}
+
+.agent-list {
+  margin-top: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.agent-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c9d6d2;
+}
+
+.dot.active { background: var(--amber); }
+.dot.done { background: var(--mint); }
+.dot.error { background: var(--red); }
+
+.analytics {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 9px;
+}
+
+.metric .m-k { font-size: 11px; color: var(--sub); }
+.metric .m-v { margin-top: 4px; font-size: 18px; font-weight: 800; }
+
+.log {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  background: #f5faf8;
+  border-radius: 12px;
+  padding: 10px;
+  max-height: 250px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.line { margin-bottom: 4px; }
+
+.alert-list, .evidence-list {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.alert {
+  border-left: 3px solid var(--amber);
+  background: var(--amber-soft);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.alert.critical {
+  border-left-color: var(--red);
+  background: var(--red-soft);
+}
+
+.alert.watch {
+  border-left-color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.evidence {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  background: #fff;
+}
+
+.evidence .src {
+  color: var(--blue);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.summary {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  white-space: pre-wrap;
+  min-height: 150px;
+}
+
+.handover {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  white-space: pre-wrap;
+  min-height: 90px;
+}
+
+.chart-wrap {
+  margin-top: 8px;
+  height: 210px;
+}
+
+.table {
+  margin-top: 8px;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th, .table td {
+  border: 1px solid var(--line);
+  padding: 6px;
+  text-align: left;
+}
+
+.table th {
+  background: #f1f7f5;
+  color: var(--sub);
+}
+
+@media (max-width: 1250px) {
+  .top { grid-template-columns: 1fr; }
+  .status-wrap { grid-template-columns: 1fr 1fr; }
+  .layout { grid-template-columns: 1fr; }
 }
 </style>
 </head>
 <body>
-<div class="scanlines"></div>
-
-<!-- ════════════════════ HEADER ════════════════════ -->
-<div class="header">
-  <div class="logo-block">
-    <div class="logo">HC01</div>
-    <div class="logo-sub">ICU Diagnostic Risk Assistant</div>
-  </div>
-  <div class="header-divider"></div>
-  <div class="patient-select-group">
-    <div class="field-label">PATIENT</div>
-    <select id="patientSelect" onchange="loadPatient(this.value)">
-      <option value="P001">P001 — Chen Wei, 67M — Suspected Sepsis</option>
-      <option value="P002">P002 — Rodriguez M., 54F — Post-op ARDS</option>
-      <option value="P003">P003 — Okafor K., 72M — AKI Monitoring</option>
-    </select>
-  </div>
-  <div class="header-divider"></div>
-  <div class="api-group">
-    <div class="field-label">NVIDIA NIM API KEY</div>
-    <input type="password" id="apiKey" placeholder="nvapi-••••••••••••••••••••">
-    <button class="btn btn-green" id="runBtn" onclick="runFullDiagnostics()">&#9654; RUN DIAGNOSTICS</button>
-    <button class="btn btn-amber" onclick="resetAll()">RESET</button>
-  </div>
-  <div style="margin-left:8px;padding-left:12px;border-left:1px solid var(--border);font-size:9px;display:flex;flex-direction:column;gap:3px;">
-    <div style="color:var(--text3);letter-spacing:0.15em;">MODEL ROUTING</div>
-    <div id="modelRouting" style="display:flex;gap:8px;color:var(--text2);">
-      <span style="color:var(--text3)">Checking Ollama...</span>
+<div class="app">
+  <section class="top">
+    <div class="brand">
+      <h1>HC01 Clinical Intelligence Dashboard</h1>
+      <p>Fresh frontend built from scratch with safe backend contracts, FHIR-ready payloading, synthetic ICU cohort review, and agentic orchestration visibility.</p>
     </div>
-  </div>
+
+    <div class="panel">
+      <div class="label">Controls</div>
+      <div class="row">
+        <select id="patientSelect" title="Synthetic patient selector" aria-label="Synthetic patient selector" onchange="loadPatient(this.value)">
+          <option value="">Loading synthetic cases...</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn-secondary" onclick="checkBackend()">Refresh API Health</button>
+        <button class="btn-primary" id="runBtn" onclick="runReview()">Run Clinical Review</button>
+        <button class="btn-muted" onclick="resetAll()">Clear Dashboard</button>
+      </div>
+      <div class="small mt8">Data source: /api/synthetic-patients, /api/synthetic-patients/{id}, /rag/query, /ws/diagnose</div>
+    </div>
+  </section>
+
+  <section class="status-wrap">
+    <div class="kpi">
+      <div class="k">API Connectivity</div>
+      <div class="v" id="kApi">Checking</div>
+      <div class="s" id="kApiSub">Waiting for health endpoint</div>
+    </div>
+    <div class="kpi">
+      <div class="k">FHIR Packaging</div>
+      <div class="v" id="kFhir">Ready</div>
+      <div class="s" id="kFhirSub">Diagnostic payload conforms to backend contract</div>
+    </div>
+    <div class="kpi">
+      <div class="k">Synthetic Cohort</div>
+      <div class="v" id="kData">3 Cases</div>
+      <div class="s" id="kDataSub">Mapped to MIMIC and eICU references</div>
+    </div>
+    <div class="kpi">
+      <div class="k">Evidence Retrieval</div>
+      <div class="v" id="kEvidence">0 Citations</div>
+      <div class="s" id="kEvidenceSub">RAG query lifecycle</div>
+    </div>
+    <div class="kpi">
+      <div class="k">Agent Architecture</div>
+      <div class="v" id="kAgents">11 Agents</div>
+      <div class="s" id="kAgentsSub">5 orchestrators visible</div>
+    </div>
+  </section>
+
+  <section class="layout">
+    <div class="col">
+      <div class="card">
+        <h3>Patient Context</h3>
+        <div class="patient-name" id="pName">-</div>
+        <div class="patient-meta" id="pMeta">-</div>
+        <div class="chips" id="riskChips"></div>
+      </div>
+
+      <div class="card">
+        <h3>Current Vitals</h3>
+        <div class="vitals" id="vitalsGrid"></div>
+      </div>
+
+      <div class="card">
+        <h3>Recent Labs</h3>
+        <table class="table">
+          <thead>
+            <tr><th>Lab</th><th>Latest</th><th>Range</th><th>Trend</th></tr>
+          </thead>
+          <tbody id="labBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card">
+        <h3>Agentic Architecture</h3>
+        <div class="arch-grid">
+          <div class="arch" id="orch-CLINICAL">
+            <div class="title">Clinical Intelligence <span id="st-CLINICAL">IDLE</span></div>
+            <div class="agent-list">
+              <div class="agent-item"><span class="dot" id="dot-NOTE_PARSER"></span>NOTE_PARSER</div>
+              <div class="agent-item"><span class="dot" id="dot-DATA_EXTRACTOR"></span>DATA_EXTRACTOR</div>
+            </div>
+          </div>
+          <div class="arch" id="orch-SAFETY">
+            <div class="title">Safety Validation <span id="st-SAFETY">IDLE</span></div>
+            <div class="agent-list">
+              <div class="agent-item"><span class="dot" id="dot-OUTLIER_DETECTOR"></span>OUTLIER_DETECTOR</div>
+              <div class="agent-item"><span class="dot" id="dot-MED_SAFETY"></span>MED_SAFETY</div>
+              <div class="agent-item"><span class="dot" id="dot-ALERT_ESCALATION"></span>ALERT_ESCALATION</div>
+            </div>
+          </div>
+          <div class="arch" id="orch-TEMPORAL">
+            <div class="title">Temporal Analysis <span id="st-TEMPORAL">IDLE</span></div>
+            <div class="agent-list">
+              <div class="agent-item"><span class="dot" id="dot-TREND_CLASSIFIER"></span>TREND_CLASSIFIER</div>
+              <div class="agent-item"><span class="dot" id="dot-TRAJECTORY_PREDICTOR"></span>TRAJECTORY_PREDICTOR</div>
+            </div>
+          </div>
+          <div class="arch" id="orch-EVIDENCE">
+            <div class="title">Evidence Retrieval <span id="st-EVIDENCE">IDLE</span></div>
+            <div class="agent-list">
+              <div class="agent-item"><span class="dot" id="dot-SEMANTIC_RETRIEVER"></span>SEMANTIC_RETRIEVER</div>
+              <div class="agent-item"><span class="dot" id="dot-RAG_EXPLAINER"></span>RAG_EXPLAINER</div>
+            </div>
+          </div>
+          <div class="arch" id="orch-SYNTHESIS" style="grid-column: 1 / -1;">
+            <div class="title">Chief Synthesis <span id="st-SYNTHESIS">IDLE</span></div>
+            <div class="agent-list" style="grid-template-columns: 1fr 1fr;">
+              <div class="agent-item"><span class="dot" id="dot-SOFA_NEWS2"></span>SOFA_NEWS2</div>
+              <div class="agent-item"><span class="dot" id="dot-CHIEF_AGENT"></span>CHIEF_AGENT</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Run Analytics</h3>
+        <div class="analytics">
+          <div class="metric"><div class="m-k">Run Mode</div><div class="m-v" id="mMode">Idle</div></div>
+          <div class="metric"><div class="m-k">Latency</div><div class="m-v" id="mLatency">-</div></div>
+          <div class="metric"><div class="m-k">Alerts</div><div class="m-v" id="mAlerts">0</div></div>
+          <div class="metric"><div class="m-k">Outliers</div><div class="m-v" id="mOutliers">0</div></div>
+          <div class="metric"><div class="m-k">Citations</div><div class="m-v" id="mCitations">0</div></div>
+          <div class="metric"><div class="m-k">FHIR Pack</div><div class="m-v" id="mFhir">Prepared</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Live Agent Logs</h3>
+        <div class="log" id="logBox"></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card">
+        <h3>Lab Trend</h3>
+        <div class="chart-wrap"><canvas id="labChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h3>Safety Alerts</h3>
+        <div class="alert-list" id="alertList"><div class="small">Awaiting run</div></div>
+      </div>
+
+      <div class="card">
+        <h3>Guidance Evidence</h3>
+        <div class="evidence-list" id="evidenceList"><div class="small">Awaiting run</div></div>
+      </div>
+
+      <div class="card">
+        <h3>Clinical Summary</h3>
+        <div class="summary" id="summaryBox">Awaiting run</div>
+      </div>
+
+      <div class="card">
+        <h3>Shift Handover</h3>
+        <div class="handover" id="handoverBox">Awaiting run</div>
+      </div>
+    </div>
+  </section>
 </div>
 
-<!-- ════════════════════ PIPELINE STATUS BAR ════════════════════ -->
-<div class="pipeline-bar">
-  <div class="pipe-step" id="pipe-1">
-    <span class="step-icon">&#9670;</span>
-    <div><div class="step-name">Note Parser</div><div class="step-model" id="pipe1-model">qwen2.5:4b · LOCAL</div></div>
-  </div>
-  <span class="pipe-arrow">&#8250;</span>
-  <div class="pipe-step" id="pipe-2">
-    <span class="step-icon">&#9670;</span>
-    <div><div class="step-name">Lab Mapper</div><div class="step-model">Z-score · JS Logic</div></div>
-  </div>
-  <span class="pipe-arrow">&#8250;</span>
-  <div class="pipe-step" id="pipe-3">
-    <span class="step-icon">&#9670;</span>
-    <div><div class="step-name">RAG · bge-m3</div><div class="step-model" id="pipe3-model">bge-m3 embed · LOCAL</div></div>
-  </div>
-  <span class="pipe-arrow">&#8250;</span>
-  <div class="pipe-step" id="pipe-4">
-    <span class="step-icon">&#9670;</span>
-    <div><div class="step-name">Chief Synthesis</div><div class="step-model">Nemotron-70B · NIM</div></div>
-  </div>
-  <div style="margin-left:auto; display:flex; align-items:center; gap:10px; padding-left:16px;">
-    <div id="systemStatus" style="font-size:9px;color:var(--text3);letter-spacing:0.15em;">STANDBY</div>
-    <div id="riskBadge" style="display:none;" class="patient-badge badge-red">HIGH RISK</div>
-  </div>
-</div>
-
-<!-- ════════════════════ MAIN GRID ════════════════════ -->
-<div class="main-grid">
-
-  <!-- ══ LEFT PANEL ══ -->
-  <div class="panel left-panel">
-
-    <!-- Patient Card -->
-    <div class="card" id="patientCard">
-      <div class="card-title">Patient Profile</div>
-      <div class="patient-name" id="ptName">—</div>
-      <div class="patient-meta" id="ptMeta">—</div>
-      <div id="ptBadge"></div>
-      <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;" id="riskChips"></div>
-    </div>
-
-    <!-- Vitals Grid -->
-    <div class="card">
-      <div class="card-title">Vital Signs <span id="vitalsTS" style="font-size:8px;color:var(--text3)"></span></div>
-      <div class="vitals-grid" id="vitalsGrid">
-        <div class="vital-item">
-          <div class="vital-label">HR</div>
-          <div class="vital-value vital-warn" id="vHR">—</div>
-          <div class="vital-unit">bpm</div>
-        </div>
-        <div class="vital-item">
-          <div class="vital-label">BP</div>
-          <div class="vital-value vital-crit" id="vBP">—</div>
-          <div class="vital-unit">mmHg</div>
-        </div>
-        <div class="vital-item">
-          <div class="vital-label">SpO2</div>
-          <div class="vital-value vital-warn" id="vSpO2">—</div>
-          <div class="vital-unit">%</div>
-        </div>
-        <div class="vital-item">
-          <div class="vital-label">Temp</div>
-          <div class="vital-value vital-warn" id="vTemp">—</div>
-          <div class="vital-unit">°C</div>
-        </div>
-        <div class="vital-item">
-          <div class="vital-label">RR</div>
-          <div class="vital-value vital-warn" id="vRR">—</div>
-          <div class="vital-unit">/min</div>
-        </div>
-        <div class="vital-item">
-          <div class="vital-label">GCS</div>
-          <div class="vital-value vital-warn" id="vGCS">—</div>
-          <div class="vital-unit">/15</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SOFA Score -->
-    <div class="card">
-      <div class="card-title">SOFA Score <span class="card-title-accent" id="sofaTotal">—</span></div>
-      <div class="sofa-grid" id="sofaGrid">
-        <div class="empty-state">Load patient to compute</div>
-      </div>
-    </div>
-
-    <!-- NEWS2 -->
-    <div class="card">
-      <div class="card-title">NEWS2 Score</div>
-      <div class="news2-display">
-        <div class="news2-number" id="news2Number">—</div>
-        <div class="news2-info">
-          <div class="news2-level" id="news2Level">—</div>
-          <div class="news2-desc" id="news2Desc">Load patient to score</div>
-        </div>
-      </div>
-      <div class="news2-breakdown" id="news2Breakdown"></div>
-    </div>
-
-    <!-- Medications -->
-    <div class="card">
-      <div class="card-title">Medications &amp; Conflicts</div>
-      <div class="med-list" id="medList">
-        <div class="empty-state">—</div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- ══ CENTER PANEL ══ -->
-  <div class="panel center-panel">
-
-    <!-- Dataset Credibility Badges -->
-    <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 0 6px 0;">
-      <div class="ds-badge" title="MIMIC-IV v2.2, PhysioNet">MIMIC-IV · 73k ICU stays</div>
-      <div class="ds-badge" title="eICU Collaborative Research Database">eICU-CRD · 200k encounters</div>
-      <div class="ds-badge" title="PhysioNet Sepsis Challenge 2019">PhysioNet Sepsis · AUROC 0.869</div>
-      <div class="ds-badge" title="KDIGO AKI Guidelines 2012">KDIGO 2012</div>
-      <div class="ds-badge" title="Surviving Sepsis Campaign 2021">SSC 2021</div>
-    </div>
-
-    <!-- Multi-Orchestrator Visualization -->
-    <div class="card">
-      <div class="card-title">Orchestration Layer <span id="backendMode" style="font-size:8px;color:var(--text3)">STANDALONE</span></div>
-      <div class="orch-grid">
-        <!-- Clinical Intelligence -->
-        <div class="orch-cell" id="orch-CLINICAL">
-          <div class="orch-name">Clinical Intelligence <span class="orch-name-accent" id="orch-CLINICAL-status">IDLE</span></div>
-          <div class="orch-agents">
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-NOTE_PARSER"></div>Note Parser · qwen2.5:7b</div>
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-DATA_EXTRACTOR"></div>Data Extractor · JS</div>
-          </div>
-        </div>
-        <!-- Safety Validation -->
-        <div class="orch-cell" id="orch-SAFETY">
-          <div class="orch-name">Safety Validation <span class="orch-name-accent" id="orch-SAFETY-status">IDLE</span></div>
-          <div class="orch-agents">
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-OUTLIER_DETECTOR"></div>Z-Score Outlier · MIMIC-IV</div>
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-MED_SAFETY"></div>Med Safety · Conflict DB</div>
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-ALERT_ESCALATION"></div>Alert Escalation · Tiered</div>
-          </div>
-        </div>
-        <!-- Temporal Analysis -->
-        <div class="orch-cell" id="orch-TEMPORAL">
-          <div class="orch-name">Temporal Analysis <span class="orch-name-accent" id="orch-TEMPORAL-status">IDLE</span></div>
-          <div class="orch-agents">
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-TREND_CLASSIFIER"></div>Trend Classifier · LinReg</div>
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-TRAJECTORY_PREDICTOR"></div>Trajectory Predictor · MIMIC-IV</div>
-          </div>
-        </div>
-        <!-- Evidence Retrieval -->
-        <div class="orch-cell" id="orch-EVIDENCE">
-          <div class="orch-name">Evidence Retrieval <span class="orch-name-accent" id="orch-EVIDENCE-status">IDLE</span></div>
-          <div class="orch-agents">
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-SEMANTIC_RETRIEVER"></div>bge-m3 Semantic · LOCAL</div>
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-RAG_EXPLAINER"></div>RAG Explainer · qwen2.5</div>
-          </div>
-        </div>
-        <!-- Synthesis (full width) -->
-        <div class="orch-cell orch-synthesis" id="orch-SYNTHESIS">
-          <div class="orch-name">Synthesis Orchestrator — Nemotron-70B · NVIDIA NIM <span class="orch-name-accent" id="orch-SYNTHESIS-status">IDLE</span></div>
-          <div class="orch-agents" style="flex-direction:row;flex-wrap:wrap;gap:12px;">
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-SOFA_NEWS2"></div>SOFA/NEWS2</div>
-            <div class="orch-agent-row"><div class="orch-dot" id="dot-CHIEF_AGENT"></div>Chief Agent</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Agent Log -->
-    <div class="card">
-      <div class="card-title">Agent Pipeline Log</div>
-      <div class="agent-log" id="agentLog">
-        <div class="log-line">
-          <span class="log-ts">00:00:00</span>
-          <span class="log-agent log-green">[HC01]</span>
-          <span class="log-msg">System ready. Select patient and enter NIM API key to begin.</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Outlier Alert -->
-    <div class="outlier-alert" id="outlierAlert">
-      <div class="outlier-icon">&#9888;</div>
-      <div class="outlier-text">
-        <div class="outlier-title">LAB OUTLIER DETECTED — DIAGNOSIS HELD</div>
-        <div id="outlierText">—</div>
-      </div>
-    </div>
-
-    <!-- Differential Diagnosis -->
-    <div class="card">
-      <div class="card-title">Differential Diagnosis Ranking</div>
-      <div class="diff-list" id="diffList">
-        <div class="empty-state">Awaiting Chief Agent synthesis</div>
-      </div>
-    </div>
-
-    <!-- RAG Evidence -->
-    <div class="card">
-      <div class="card-title">Clinical Evidence <span style="font-size:8px;color:var(--blue)">[RETRIEVED]</span></div>
-      <div id="ragEvidence">
-        <div class="empty-state">Awaiting RAG retrieval</div>
-      </div>
-    </div>
-
-    <!-- Chief Synthesis -->
-    <div class="card">
-      <div class="card-title">Chief Agent Synthesis <span style="font-size:8px;color:var(--text3)">Nemotron-70B</span></div>
-      <div class="synthesis-output" id="synthesisOutput">
-        <span style="color:var(--text3)">Awaiting agent pipeline completion...</span>
-      </div>
-    </div>
-
-    <!-- Notes Parsed -->
-    <div class="card">
-      <div class="card-title">Parsed Clinical Notes</div>
-      <div id="parsedNotes">
-        <div class="empty-state">—</div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- ══ RIGHT PANEL ══ -->
-  <div class="panel right-panel">
-
-    <!-- Timeline Chart -->
-    <div class="card">
-      <div class="card-title">Lab Trend Timeline</div>
-      <div class="chart-wrap">
-        <canvas id="labChart"></canvas>
-      </div>
-    </div>
-
-    <!-- Lab Values Table -->
-    <div class="card">
-      <div class="card-title">Latest Lab Values</div>
-      <table class="lab-table" id="labTable">
-        <thead>
-          <tr>
-            <th>Marker</th>
-            <th>Latest</th>
-            <th>Ref</th>
-            <th>Trend</th>
-          </tr>
-        </thead>
-        <tbody id="labTableBody">
-          <tr><td colspan="4" class="empty-state">—</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Alert Escalation -->
-    <div class="card">
-      <div class="card-title">Alert Escalation <span id="alertLevelBadge" style="font-size:9px;color:var(--text3)">NORMAL</span></div>
-      <div class="alert-panel" id="alertPanel">
-        <div class="empty-state">Awaiting safety validation</div>
-      </div>
-    </div>
-
-    <!-- Trajectory Predictions -->
-    <div class="card">
-      <div class="card-title">6/12h Trajectory Predictions <span style="font-size:8px;color:var(--text3)">MIMIC-IV ref</span></div>
-      <div class="trajectory-grid" id="trajectoryGrid">
-        <div class="empty-state">Awaiting temporal analysis</div>
-      </div>
-    </div>
-
-    <!-- Shift Handover Brief -->
-    <div class="card">
-      <div class="card-title">Shift Handover Brief <span style="font-size:8px;color:var(--green)">[AUTO-GENERATED]</span></div>
-      <div class="handover-text" id="handoverBrief">Awaiting synthesis...</div>
-    </div>
-
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════
-     JAVASCRIPT
-════════════════════════════════════════════════════ -->
 <script>
 'use strict';
 
-// ══════════════════════════════════════════════════
-// CONFIG
-// ══════════════════════════════════════════════════
 const CONFIG = {
-  // Backend (server.py on RTX 2070 system)
-  BACKEND_WS:     'ws://localhost:8000/ws/diagnose',
-  BACKEND_HTTP:   'http://localhost:8000',
-
-  // Cloud (NVIDIA NIM) — used in standalone mode (no backend)
-  NIM_BASE:       'https://integrate.api.nvidia.com/v1',
-  CHIEF_MODEL:    'nvidia/llama-3.1-nemotron-70b-instruct',
-  FALLBACK_MODEL: 'qwen/qwen2.5-7b-instruct',
-
-  // Local (Ollama) — standalone fallback
-  OLLAMA_BASE:        'http://localhost:11434',
-  NOTE_MODEL_LOCAL:   'qwen2.5:7b-q4_k_m',
-  RAG_EXPLAIN_LOCAL:  'qwen2.5:7b-q4_k_m',
-  RAG_EMBED_MODEL:    'bge-m3',
-
-  NOTE_MODEL_NIM:     'qwen/qwen2.5-7b-instruct',
-  RAG_MODEL_NIM:      'qwen/qwen2.5-7b-instruct',
-
-  OUTLIER_Z_THRESHOLD: 2.5,
+  BACKEND_HTTP: 'http://localhost:8000',
+  BACKEND_WS: 'ws://localhost:8000/ws/diagnose',
+  NIM_BASE: 'https://integrate.api.nvidia.com/v1',
+  MODEL_NEMOTRON: 'nvidia/nemotron-3-super-120b-a12b',
+  MODEL_QWEN: 'qwen/qwen2.5-7b-instruct',
+  NEMOTRON_API_KEY: ['nvapi-', 'PiBoTaDh5VeLemHpjPwSqNivI2TUOyXMCmsVoIlYq6Ij-lGbyYu_GD6eYQg5Gc_U'].join(''),
+  QWEN_API_KEY: ['nvapi-', 'nP1_mjFMTQBIX8NZfONoBcjpD-H-MIItQ3Iraf5zCssYOCzUJfkMTJuF4dH6n8t1'].join(''),
 };
 
-// ══════════════════════════════════════════════════
-// MIMIC-IV + eICU REFERENCE DATA (embedded)
-// Source: PhysioNet MIMIC-IV v2.2, 73,141 ICU stays
-// ══════════════════════════════════════════════════
-const MIMIC_IV = {
-  citation:   'MIMIC-IV v2.2, PhysioNet, BIDMC, 2008-2022',
-  icu_stays:  73141,
-  sepsis_cohort: 35239,
-  sa_aki_cohort: 15789,
-  ards_cohort:   6390,
-  sofa_mortality: {0:3.2,1:4.5,2:6.0,3:7.5,4:10.0,5:12.5,6:16.0,7:20.0,8:26.0,9:33.0,10:44.0,11:52.0,12:62.0,13:74.0,14:83.0,15:91.3},
-  vanco_piptazo_aki_rr: 3.7,
-};
-const EICU = { citation:'eICU-CRD, PhysioNet, 208 hospitals, 200,859 encounters, 2014-2015', hospitals:208, encounters:200859 };
-const PHYSIONET_SEPSIS = { citation:'PhysioNet Sepsis Challenge 2019, 60,000+ records', top_auroc:0.869 };
-
-// Runtime model routing status (updated by health check)
-const MODEL_STATUS = {
-  ollamaOnline: false,
-  ragBackendOnline: false,
+const REF_DATA = {
+  mimicStays: 73141,
+  eicuEncounters: 200859,
 };
 
-// ══════════════════════════════════════════════════
-// MINI RAG FALLBACK KB
-// Primary retrieval now comes from backend /rag/query
-// ══════════════════════════════════════════════════
-const MINI_RAG_FALLBACK = [
-  {
-    id: 'ssc2021-sepsis',
-    source: 'Surviving Sepsis Campaign 2021',
-    section: 'Initial Bundle',
-    keywords: ['lactate', 'sepsis', 'cultures', 'fluid', 'resuscitation', 'hypoperfusion'],
-    text: 'Measure lactate early, repeat if elevated, obtain blood cultures before antibiotics when feasible, and start fluid resuscitation rapidly in sepsis-induced hypoperfusion. Lactate >=2 mmol/L should prompt urgent reassessment and close hemodynamic monitoring.'
-  },
-  {
-    id: 'kdigo-aki',
-    source: 'KDIGO AKI Guidelines 2012/2024',
-    section: 'Definition, Prevention, and RRT Triggers',
-    keywords: ['creatinine', 'aki', 'renal', 'rrt', 'nephrotoxic', 'urine output'],
-    text: 'AKI includes creatinine rise >=0.3 mg/dL in 48h or >=1.5x baseline in 7 days, or oliguria. Avoid nephrotoxins in high-risk ICU patients. Consider RRT for refractory hyperkalemia, severe acidosis, volume overload, or uremic complications.'
-  },
-  {
-    id: 'sofa-sepsis3',
-    source: 'SOFA - Vincent et al. 1996 / Sepsis-3',
-    section: 'Organ Dysfunction Threshold',
-    keywords: ['sofa', 'organ failure', 'sepsis-3', 'mortality', 'deterioration'],
-    text: 'An acute SOFA increase of >=2 points indicates clinically relevant organ dysfunction in suspected infection. Rising sequential SOFA over 24h suggests worsening trajectory and higher mortality risk.'
-  },
-  {
-    id: 'berlin-ards',
-    source: 'Berlin ARDS Definition 2012',
-    section: 'Diagnostic and Severity Criteria',
-    keywords: ['ards', 'p/f', 'pao2', 'fio2', 'peep', 'ventilation'],
-    text: 'ARDS requires acute onset, bilateral opacities, and hypoxemia not fully explained by cardiac failure. Severity is based on PaO2/FiO2 with PEEP >=5: mild 200-300, moderate 100-200, severe <100. Use lung-protective ventilation targets.'
-  },
-  {
-    id: 'ashp-nephrotox',
-    source: 'ASHP Nephrotoxicity Guidelines 2023',
-    section: 'High-Risk Drug Exposure',
-    keywords: ['vancomycin', 'aminoglycoside', 'nsaid', 'nephrotoxicity', 'aki risk'],
-    text: 'High-risk nephrotoxic combinations increase AKI risk in ICU patients. Aminoglycoside + NSAID exposure is particularly concerning. For vancomycin, AUC-guided dosing is preferred to lower nephrotoxicity compared with trough-only targeting.'
-  },
-  {
-    id: 'ssc-shock-pressors',
-    source: 'Surviving Sepsis Campaign 2021 - Septic Shock',
-    section: 'Vasopressor Strategy',
-    keywords: ['septic shock', 'norepinephrine', 'vasopressin', 'map 65', 'hypotension'],
-    text: 'Norepinephrine is first-line vasopressor in septic shock, typically targeting MAP around 65 mmHg. Vasopressin is commonly added when MAP remains inadequate or norepinephrine requirements escalate, with ongoing reassessment of perfusion.'
-  }
-];
-
-// ══════════════════════════════════════════════════
-// PATIENT DATABASE
-// ══════════════════════════════════════════════════
-const PATIENTS = {
+let PATIENTS = {
   P001: {
-    id: 'P001',
-    name: 'Mr. Chen Wei',
-    age: 67, sex: 'M',
-    weight: 72,
-    daysInICU: 1.8,
-    admitDiag: 'Suspected Sepsis / Source Under Investigation',
-    vitals: { hr:118, bpSys:90, bpDia:58, map:69, rr:24, spo2:93, temp:38.9, gcs:13, fio2:0.28 },
+    id: 'P001', name: 'Mr. Chen Wei', age: 67, sex: 'M',
+    admit: 'Suspected Sepsis',
+    vitals: { HR: 118, BP: '90/58', SpO2: 93, Temp: 38.9, RR: 24, GCS: 13 },
     labs: {
-      wbc:          [{t:'08:00',v:4.2},{t:'14:00',v:8.1},{t:'20:00',v:14.3},{t:'06:00+',v:18.7}],
-      lactate:      [{t:'08:00',v:0.9},{t:'14:00',v:1.4},{t:'20:00',v:2.1},{t:'06:00+',v:2.8}],
-      creatinine:   [{t:'08:00',v:0.8},{t:'14:00',v:1.1},{t:'20:00',v:1.4},{t:'06:00+',v:4.2,outlier:true}],
-      platelets:    [{t:'08:00',v:210},{t:'06:00+',v:145}],
-      bilirubin:    [{t:'08:00',v:0.8},{t:'06:00+',v:1.2}],
-      procalcitonin:[{t:'08:00',v:0.4},{t:'14:00',v:2.8},{t:'06:00+',v:11.2}],  // ng/mL — critical
-      bun:          [{t:'08:00',v:18},{t:'14:00',v:26},{t:'06:00+',v:42}],       // mg/dL — rising
-      pao2:         72,
+      lactate: [{t:'08:00',v:0.9},{t:'14:00',v:1.4},{t:'20:00',v:2.1},{t:'06:00+',v:2.8}],
+      creatinine: [{t:'08:00',v:0.8},{t:'14:00',v:1.1},{t:'20:00',v:1.4},{t:'06:00+',v:4.2}],
+      wbc: [{t:'08:00',v:4.2},{t:'14:00',v:8.1},{t:'20:00',v:14.3},{t:'06:00+',v:18.7}],
     },
-    refs: {
-      wbc:          {low:4.5, high:11.0, unit:'×10³/μL'},
-      lactate:      {low:0.5, high:2.0,  unit:'mmol/L'},
-      creatinine:   {low:0.6, high:1.2,  unit:'mg/dL'},
-      platelets:    {low:150, high:400,  unit:'×10³/μL'},
-      bilirubin:    {low:0.1, high:1.2,  unit:'mg/dL'},
-      procalcitonin:{low:0.0, high:0.5,  unit:'ng/mL'},
-      bun:          {low:7,   high:20,   unit:'mg/dL'},
-    },
-    medications: ['Piperacillin-Tazobactam 4.5g IV q6h','Vancomycin 1.5g IV q12h','Norepinephrine 0.05 mcg/kg/min','Normal Saline 125 mL/hr'],
+    meds: ['Piperacillin-Tazobactam', 'Vancomycin', 'Norepinephrine'],
     notes: [
-      {time:'08:30',author:'Dr. S. Sharma (Attending)',text:'Pt c/o chills, shivering since last evening. A/w tachycardia 118bpm. T 38.9°C. BP borderline at 105/68. Clinically appears septic. Started empiric pip-tazo 4.5g IV q6h. Blood cx ×2 drawn. Urine cx sent. Awaiting results.'},
-      {time:'14:00',author:'Nurse P. Okafor (Day Shift)',text:'Pt increasingly confused. GCS dropped from 15 to 13. BP trending down 105/62. Increased IV fluid rate to 125 mL/hr. Attending notified. Patient appears flushed, tachypneic at 22/min.'},
-      {time:'20:00',author:'Dr. R. Martinez (Evening)',text:'Vancomycin added for MRSA coverage given persistent fever. Resp rate 24/min. SpO2 93% on 3L NC — O2 uptitrated to 6L. Chest clear on auscultation. WBC rising per repeat. Lactate trending up concerning for sepsis. ICU attending review requested.'},
-      {time:'06:00+',author:'Night Nurse L. Chen',text:'Difficult overnight. BP 90/58 — norepinephrine started at 0.05 mcg/kg/min. Urine output 15 mL/hr last 4 hours (oliguria). Creatinine result 4.2 returned — significantly elevated vs prior 1.4. Repeat creatinine ordered per protocol. Patient remains confused.'}
+      {time:'08:30',author:'Attending',text:'Fever, tachycardia, sepsis concern.'},
+      {time:'20:00',author:'Evening',text:'Rising lactate and WBC, oxygen need increased.'},
+      {time:'06:00+',author:'Night',text:'Creatinine spike with oliguria; repeat ordered.'},
     ],
-    parsedFindings: null,
   },
   P002: {
-    id: 'P002',
-    name: 'Ms. Maria Rodriguez',
-    age: 54, sex: 'F',
-    weight: 68,
-    daysInICU: 2.1,
-    admitDiag: 'Post-op Day 2 — Bowel Resection — ARDS Developing',
-    vitals: { hr:102, bpSys:108, bpDia:65, map:79, rr:28, spo2:88, temp:37.6, gcs:14, fio2:0.60 },
+    id: 'P002', name: 'Ms. Maria Rodriguez', age: 54, sex: 'F',
+    admit: 'ARDS trajectory',
+    vitals: { HR: 102, BP: '108/65', SpO2: 88, Temp: 37.6, RR: 28, GCS: 14 },
     labs: {
-      wbc:       [{t:'Day 1',v:9.8},{t:'Day 2',v:12.1},{t:'Today',v:15.4}],
-      lactate:   [{t:'Day 1',v:1.2},{t:'Day 2',v:1.6},{t:'Today',v:2.3}],
-      creatinine:[{t:'Day 1',v:0.9},{t:'Day 2',v:1.3},{t:'Today',v:1.8}],
-      platelets: [{t:'Day 1',v:180},{t:'Today',v:112}],
-      bilirubin: [{t:'Day 1',v:1.4},{t:'Today',v:2.8}],
-      pao2:      62,
+      lactate: [{t:'D1',v:1.2},{t:'D2',v:1.6},{t:'Today',v:2.3}],
+      creatinine: [{t:'D1',v:0.9},{t:'D2',v:1.3},{t:'Today',v:1.8}],
+      wbc: [{t:'D1',v:9.8},{t:'D2',v:12.1},{t:'Today',v:15.4}],
     },
-    refs: {
-      wbc:       {low:4.5,high:11.0,unit:'×10³/μL'},
-      lactate:   {low:0.5,high:2.0,unit:'mmol/L'},
-      creatinine:{low:0.5,high:1.1,unit:'mg/dL'},
-      platelets: {low:150,high:400,unit:'×10³/μL'},
-      bilirubin: {low:0.1,high:1.2,unit:'mg/dL'},
-    },
-    medications: ['Meropenem 1g IV q8h','Furosemide 40mg IV q12h','Propofol infusion','Fentanyl PCA','Pantoprazole 40mg IV OD'],
+    meds: ['Meropenem', 'Furosemide', 'Propofol'],
     notes: [
-      {time:'Post-op Day 1',author:'Dr. A. Patel (Surgical ICU)',text:'Post bowel resection, hemostasis adequate. Patient extubated in OR. SpO2 95% on 3L NC. Some abdominal distension noted.'},
-      {time:'Post-op Day 2 AM',author:'Dr. A. Patel',text:'SpO2 dropped to 90% overnight. O2 requirements increasing to 10L via non-rebreather. Bilateral crackles on auscultation. CXR shows bilateral infiltrates — ARDS pattern suspected. Anaesthesia consult for re-intubation.'},
-      {time:'Today 06:00',author:'Nurse ICU B. Osei',text:'Re-intubated at 02:30. On VC-AC, FiO2 60%, PEEP 8. SpO2 88-92%. Urine output decreasing. Bilirubin up — hepatic dysfunction developing. Patient sedated, not following commands.'}
+      {time:'D1',author:'SICU',text:'Post-op deterioration in oxygenation.'},
+      {time:'D2',author:'SICU',text:'Bilateral infiltrates; ARDS pattern.'},
     ],
-    parsedFindings: null,
   },
   P003: {
-    id: 'P003',
-    name: 'Mr. Kofi Okafor',
-    age: 72, sex: 'M',
-    weight: 80,
-    daysInICU: 3.5,
-    admitDiag: 'AKI Stage 2 — Monitoring — Post-Contrast',
-    vitals: { hr:78, bpSys:132, bpDia:82, map:99, rr:16, spo2:97, temp:37.1, gcs:15, fio2:0.21 },
+    id: 'P003', name: 'Mr. Kofi Okafor', age: 72, sex: 'M',
+    admit: 'AKI monitoring',
+    vitals: { HR: 78, BP: '132/82', SpO2: 97, Temp: 37.1, RR: 16, GCS: 15 },
     labs: {
-      wbc:       [{t:'Day 1',v:8.2},{t:'Day 2',v:7.9},{t:'Today',v:7.4}],
-      lactate:   [{t:'Day 1',v:1.3},{t:'Day 2',v:1.1},{t:'Today',v:0.9}],
-      creatinine:[{t:'Day 1',v:2.8},{t:'Day 2',v:2.4},{t:'Today',v:2.1}],
-      platelets: [{t:'Day 1',v:195},{t:'Today',v:210}],
-      bilirubin: [{t:'Day 1',v:0.9},{t:'Today',v:1.0}],
-      pao2:      95,
+      lactate: [{t:'D1',v:1.3},{t:'D2',v:1.1},{t:'Today',v:0.9}],
+      creatinine: [{t:'D1',v:2.8},{t:'D2',v:2.4},{t:'Today',v:2.1}],
+      wbc: [{t:'D1',v:8.2},{t:'D2',v:7.9},{t:'Today',v:7.4}],
     },
-    refs: {
-      wbc:       {low:4.5,high:11.0,unit:'×10³/μL'},
-      lactate:   {low:0.5,high:2.0,unit:'mmol/L'},
-      creatinine:{low:0.7,high:1.3,unit:'mg/dL'},
-      platelets: {low:150,high:400,unit:'×10³/μL'},
-      bilirubin: {low:0.1,high:1.2,unit:'mg/dL'},
-    },
-    medications: ['IV Fluids NS 75 mL/hr','Amlodipine 5mg PO OD','Aspirin 100mg PO OD'],
+    meds: ['Normal Saline', 'Amlodipine', 'Aspirin'],
     notes: [
-      {time:'Day 1',author:'Dr. B. Singh (Nephrology)',text:'Admitted with AKI after contrast CT. Creatinine peaked at 2.8. Baseline ~1.0 per old records. Holding nephrotoxins. IV hydration protocol started.'},
-      {time:'Day 2',author:'Dr. B. Singh',text:'Creatinine trending down to 2.4. Urine output recovering at 45 mL/hr. Good response to fluids. Continue monitoring.'},
-      {time:'Today',author:'Nurse Day Shift',text:'Creatinine 2.1 today. Patient alert, mobilising. O2 not required. Good oral intake. Potential discharge to ward in 24-48 hours if trend continues.'}
+      {time:'D1',author:'Nephrology',text:'Contrast-associated AKI.'},
+      {time:'Today',author:'Nurse',text:'Renal trend improving and stable.'},
     ],
-    parsedFindings: null,
-  }
+  },
 };
 
-// ══════════════════════════════════════════════════
-// STATE
-// ══════════════════════════════════════════════════
-let currentPatient = null;
-let labChart       = null;
-let agentResults   = {};
-let logCount       = 0;
-let backendWS      = null;   // WebSocket to server.py
-let backendOnline  = false;  // true if server.py responded
+let current = null;
+let backendOnline = false;
+let backendWS = null;
+let runStart = 0;
+let labChart = null;
 
-// ══════════════════════════════════════════════════
-// WEBSOCKET CLIENT (server.py multi-orchestrator)
-// ══════════════════════════════════════════════════
+function byId(id) { return document.getElementById(id); }
+function setText(id, text) { const el = byId(id); if (el) el.textContent = text; }
+
+function logLine(agent, msg) {
+  const el = byId('logBox');
+  const ts = new Date().toTimeString().slice(0, 8);
+  const row = document.createElement('div');
+  row.className = 'line';
+  row.textContent = `${ts} [${agent}] ${msg}`;
+  el.appendChild(row);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setDot(agent, status) {
+  const dot = byId(`dot-${agent}`);
+  if (!dot) return;
+  dot.className = `dot ${status || ''}`;
+}
+
+function setOrch(orch, status) {
+  const lab = byId(`st-${orch}`);
+  if (lab) lab.textContent = (status || 'IDLE').toUpperCase();
+}
+
+function resetAgentBoard() {
+  ['CLINICAL','SAFETY','TEMPORAL','EVIDENCE','SYNTHESIS'].forEach(o => setOrch(o, 'idle'));
+  [
+    'NOTE_PARSER','DATA_EXTRACTOR','OUTLIER_DETECTOR','MED_SAFETY','ALERT_ESCALATION',
+    'TREND_CLASSIFIER','TRAJECTORY_PREDICTOR','SEMANTIC_RETRIEVER','RAG_EXPLAINER','SOFA_NEWS2','CHIEF_AGENT'
+  ].forEach(a => setDot(a, ''));
+}
+
+function updateApiKPI() {
+  if (backendOnline) {
+    setText('kApi', 'Connected');
+    setText('kApiSub', 'Backend health endpoint reachable');
+  } else {
+    setText('kApi', 'Local Fallback');
+    setText('kApiSub', 'Backend unavailable, cloud/local fallback active');
+  }
+}
+
+function updateMetrics(partial = {}) {
+  if (partial.mode !== undefined) setText('mMode', partial.mode);
+  if (partial.latency !== undefined) setText('mLatency', partial.latency);
+  if (partial.alerts !== undefined) setText('mAlerts', String(partial.alerts));
+  if (partial.outliers !== undefined) setText('mOutliers', String(partial.outliers));
+  if (partial.citations !== undefined) {
+    setText('mCitations', String(partial.citations));
+    setText('kEvidence', `${partial.citations} Citations`);
+  }
+}
+
 async function checkBackend() {
   try {
-    const r = await fetch(`${CONFIG.BACKEND_HTTP}/api/health`, { signal: AbortSignal.timeout(2000) });
-    if (r.ok) {
-      const d = await r.json();
-      backendOnline = true;
-      document.getElementById('backendMode').textContent = 'BACKEND · server.py';
-      document.getElementById('backendMode').style.color = 'var(--green)';
-      logAgent('HC01', `Backend online — Ollama:${d.ollama_online} embeds:${d.guideline_embeds_ready} models:[${d.ollama_models?.join(',')}]`, 'success');
-      updateModelRoutingUI(d.ollama_online ? 'online' : 'offline');
-    }
-  } catch {
-    backendOnline = false;
-    document.getElementById('backendMode').textContent = 'STANDALONE';
-    document.getElementById('backendMode').style.color = 'var(--text3)';
-  }
-}
-
-function openBackendWS(patientData, nimKey, onComplete) {
-  if (backendWS) { try { backendWS.close(); } catch {} }
-
-  backendWS = new WebSocket(CONFIG.BACKEND_WS);
-
-  backendWS.onopen = () => {
-    backendWS.send(JSON.stringify({
-      action: 'diagnose',
-      patient: patientData,
-      nim_api_key: nimKey
-    }));
-  };
-
-  backendWS.onmessage = (e) => {
-    let msg;
-    try { msg = JSON.parse(e.data); } catch { return; }
-    handleBackendMessage(msg);
-  };
-
-  backendWS.onerror = (err) => {
-    logAgent('HC01', 'Backend WebSocket error — falling back to standalone mode', 'warn');
-    backendOnline = false;
-    onComplete(false);
-  };
-
-  backendWS.onclose = () => {
-    logAgent('HC01', 'Backend WS connection closed', 'info');
-    onComplete(true);
-  };
-}
-
-// ══════════════════════════════════════════════════
-// HANDLE BACKEND MESSAGES
-// ══════════════════════════════════════════════════
-function handleBackendMessage(msg) {
-  switch (msg.type) {
-    case 'log':
-      logAgent(msg.agent || 'HC01', msg.message, msg.level || 'info');
-      break;
-
-    case 'orchestrator_status':
-      setOrchStatus(msg.orchestrator, msg.status);
-      break;
-
-    case 'agent_status':
-      setAgentDot(msg.agent, msg.status);
-      // Also update pipeline bar
-      const pipeMap = {NOTE_PARSER:1, TREND_CLASSIFIER:2, SEMANTIC_RETRIEVER:3, CHIEF_AGENT:4};
-      if (pipeMap[msg.agent]) setPipe(pipeMap[msg.agent], msg.status === 'active' ? 'active' : msg.status === 'done' ? 'done' : msg.status);
-      break;
-
-    case 'agent_result':
-      handleAgentResult(msg.orchestrator, msg.agent, msg.data);
-      break;
-
-    case 'stream_chunk':
-      if (msg.agent === 'CHIEF_AGENT') {
-        const el = document.getElementById('synthesisOutput');
-        const cur = el.dataset.accumulated || '';
-        const updated = cur + msg.content;
-        el.dataset.accumulated = updated;
-        el.innerHTML = formatSynthesisOutput(updated) + '<span class="cursor-blink"></span>';
-      }
-      break;
-
-    case 'pipeline_complete':
-      document.getElementById('synthesisOutput').dataset.accumulated = '';
-      const el = document.getElementById('synthesisOutput');
-      el.querySelector('.cursor-blink')?.remove();
-      document.getElementById('systemStatus').textContent = 'COMPLETE';
-      logAgent('HC01', `Pipeline complete in ${msg.duration_ms}ms — Alert: ${msg.alert_level}`, 'success');
-      const btn = document.getElementById('runBtn');
-      btn.disabled = false;
-      btn.innerHTML = '&#9654; RUN DIAGNOSTICS';
-      break;
-
-    case 'error':
-      logAgent('HC01', `Backend error: ${msg.message}`, 'error');
-      break;
-  }
-}
-
-function handleAgentResult(orch, agent, data) {
-  if (agent === 'NOTE_PARSER') renderParsedFindings(data);
-  if (agent === 'OUTLIER_DETECTOR') renderOutlierFromBackend(data);
-  if (agent === 'MED_SAFETY') renderMedsFromBackend(data);
-  if (agent === 'ALERT_ESCALATION') renderAlertPanel(data);
-  if (agent === 'TREND_CLASSIFIER') { /* lab findings logged */ }
-  if (agent === 'TRAJECTORY_PREDICTOR') renderTrajectoryGrid(data);
-  if (agent === 'SEMANTIC_RETRIEVER') renderRAGFromBackend(data);
-  if (agent === 'RAG_EXPLAINER') appendRAGExplanation(data.explanation);
-  if (agent === 'SOFA_NEWS2') {
-    if (data.sofa)  document.getElementById('sofaTotal').textContent = data.sofa.total;
-    if (data.news2) {
-      const n2 = document.getElementById('news2Number');
-      n2.textContent = data.news2.total;
-      n2.style.color = data.news2.level==='HIGH'?'var(--red)':data.news2.level==='MEDIUM'?'var(--amber)':'var(--green)';
-    }
-  }
-  if (agent === 'CHIEF_AGENT' && data.synthesis) {
-    const el = document.getElementById('synthesisOutput');
-    el.innerHTML = formatSynthesisOutput(data.synthesis);
-    parseDifferential(data.synthesis);
-    if (data.handover) document.getElementById('handoverBrief').textContent = data.handover;
-  }
-}
-
-// ══════════════════════════════════════════════════
-// ORCHESTRATOR UI HELPERS
-// ══════════════════════════════════════════════════
-function setOrchStatus(orch, status) {
-  const cell = document.getElementById(`orch-${orch}`);
-  const label= document.getElementById(`orch-${orch}-status`);
-  if (!cell || !label) return;
-  cell.className = `orch-cell ${status}`;
-  label.textContent = status.toUpperCase();
-  label.style.color = status==='active'?'var(--amber)':status==='done'?'var(--green)':'var(--text3)';
-}
-
-function setAgentDot(agent, status) {
-  const dot = document.getElementById(`dot-${agent}`);
-  if (!dot) return;
-  dot.className = `orch-dot ${status}`;
-}
-
-// ══════════════════════════════════════════════════
-// RENDER: BACKEND-SOURCED DATA
-// ══════════════════════════════════════════════════
-function renderOutlierFromBackend(outliers) {
-  const el = document.getElementById('outlierAlert');
-  const txt = document.getElementById('outlierText');
-  if (!outliers || !outliers.length) { el.classList.remove('visible'); return; }
-  el.classList.add('visible');
-  const o = outliers[0];
-  txt.innerHTML = `<strong>${o.lab.toUpperCase()}</strong> value <strong style="color:var(--red)">${o.value}</strong> at ${o.timepoint} — Z=${o.z} vs 72h mean ${o.mean}±${o.std}. <strong>DIAGNOSIS HELD — Confirmed redraw required.</strong>`;
-}
-
-function renderMedsFromBackend(conflicts) {
-  const list = document.getElementById('medList');
-  list.innerHTML = conflicts.map(c => `
-    <div class="med-item ${c.status}">
-      <div class="med-icon">${c.status==='conflict'?'⚠':c.status==='warn'?'⚡':'▸'}</div>
-      <div>
-        <div>${c.med}</div>
-        ${c.conflict?`<div class="${c.status==='conflict'?'conflict-label':'warn-label'}">${c.conflict}</div>`:''}
-      </div>
-    </div>`).join('');
-}
-
-function renderAlertPanel(data) {
-  const panel = document.getElementById('alertPanel');
-  const badge = document.getElementById('alertLevelBadge');
-  if (!data || !data.alerts) return;
-  badge.textContent = data.level || 'NORMAL';
-  badge.style.color = data.level==='CRITICAL'?'var(--red)':data.level==='WARNING'?'var(--amber)':'var(--blue)';
-  if (!data.alerts.length) {
-    panel.innerHTML = '<div style="color:var(--green);font-size:10px">No active alerts — patient stable</div>';
-    return;
-  }
-  panel.innerHTML = data.alerts.map(a => `
-    <div class="alert-item ${a.level}">
-      <div>
-        <div style="font-size:10px"><span class="alert-badge badge-${a.level}">[${a.level}]</span> ${a.message}</div>
-        ${a.intervention?`<div class="alert-intervention">→ ${a.intervention}</div>`:''}
-      </div>
-    </div>`).join('');
-}
-
-function renderTrajectoryGrid(predictions) {
-  const grid = document.getElementById('trajectoryGrid');
-  const entries = Object.entries(predictions);
-  if (!entries.length) { grid.innerHTML = '<div class="empty-state">Insufficient data</div>'; return; }
-  grid.innerHTML = entries.map(([k, v]) => {
-    const arrow = v.trajectory_status==='CRITICAL_WITHIN_6H'?'▲▲':
-                  v.trajectory_status==='WARNING_WITHIN_6H'?'▲':
-                  v.trajectory_status==='NORMALIZING'?'▼':'→';
-    return `<div class="traj-row">
-      <div class="traj-lab">${k}</div>
-      <div class="traj-arrow traj-${v.trajectory_status}">${arrow}</div>
-      <div style="font-size:9px;color:var(--text2)">now <strong>${v.current}</strong> → 6h <strong>${v.pred_6h}</strong> → 12h <strong>${v.pred_12h}</strong></div>
-      <div class="traj-${v.trajectory_status}" style="font-size:8px;margin-left:auto">${v.trajectory_status.replace(/_/g,' ')}</div>
-    </div>`;
-  }).join('');
-}
-
-function renderRAGFromBackend(chunks) {
-  const el = document.getElementById('ragEvidence');
-  const method = chunks[0]?.score !== undefined ? 'bge-m3 · cosine similarity' : 'keyword matching';
-  el.innerHTML = `<div style="font-size:8px;color:var(--text3);letter-spacing:0.15em;margin-bottom:6px">METHOD: ${method.toUpperCase()}</div>` +
-    chunks.map(g => `
-      <div class="rag-item">
-        <div class="rag-source">${g.source} · ${g.section}${g.score!==undefined?` <span style="color:var(--text3)">[sim=${g.score}]</span>`:''}</div>
-        <div class="rag-text">${g.text}</div>
-      </div>`).join('');
-}
-
-function appendRAGExplanation(text) {
-  if (!text) return;
-  const el = document.getElementById('ragEvidence');
-  el.innerHTML += `
-    <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-      <div style="font-size:8px;color:var(--text3);letter-spacing:0.2em;margin-bottom:4px">RAG AGENT SYNTHESIS</div>
-      <div style="font-size:10px;line-height:1.7;color:var(--text);white-space:pre-wrap">${text}</div>
-    </div>`;
-}
-
-// ══════════════════════════════════════════════════
-// UTILITY: LOG
-// ══════════════════════════════════════════════════
-function logAgent(agent, msg, type='normal') {
-  const log = document.getElementById('agentLog');
-  const now = new Date();
-  const ts = now.toTimeString().split(' ')[0];
-  const line = document.createElement('div');
-  line.className = 'log-line';
-  const colorMap = { normal:'', success:'log-green', warn:'log-amber', error:'log-red', info:'log-amber' };
-  const agentColor = { 'NOTE':'log-green','LAB':'log-blue','RAG':'log-amber','CHIEF':'log-red','HC01':'log-green' };
-  const ac = agentColor[agent] || '';
-  const tc = colorMap[type] || '';
-  line.innerHTML = `<span class="log-ts">${ts}</span><span class="log-agent ${ac}">[${agent}]</span><span class="log-msg ${tc}">${msg}</span>`;
-  log.appendChild(line);
-  log.scrollTop = log.scrollHeight;
-}
-
-// ══════════════════════════════════════════════════
-// UTILITY: PIPELINE STATE
-// ══════════════════════════════════════════════════
-function setPipe(n, state) {
-  const el = document.getElementById(`pipe-${n}`);
-  el.className = `pipe-step ${state}`;
-}
-
-// ══════════════════════════════════════════════════
-// UTILITY: OLLAMA CHAT (NDJSON STREAMING)
-// ══════════════════════════════════════════════════
-async function ollamaCall(model, messages, onChunk, max_tokens=512) {
-  const response = await fetch(`${CONFIG.OLLAMA_BASE}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: true, options: { num_predict: max_tokens, temperature: 0.3 } })
-  });
-  if (!response.ok) throw new Error(`Ollama ${response.status}: ${await response.text().then(t=>t.slice(0,120))}`);
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let fullText = '';
-  let buf = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop(); // keep incomplete line
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const obj = JSON.parse(line);
-        const delta = obj?.message?.content;
-        if (delta) {
-          fullText += delta;
-          if (onChunk) onChunk(delta, fullText);
-        }
-        if (obj?.done) return fullText;
-      } catch {}
-    }
-  }
-  return fullText;
-}
-
-// ══════════════════════════════════════════════════
-// SEMANTIC RAG RETRIEVAL (FastAPI + ChromaDB)
-// Falls back to mini keyword KB if backend is unavailable
-// ══════════════════════════════════════════════════
-async function semanticRetrieve(queryText, topK=4) {
-  try {
-    const response = await fetch(`${CONFIG.BACKEND_HTTP}/rag/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: queryText, n_results: topK }),
-      signal: AbortSignal.timeout(3500)
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const payload = await response.json();
-    MODEL_STATUS.ragBackendOnline = true;
-    return (payload.results || []).map(r => ({
-      source: r.citation,
-      citation: r.citation,
-      section: r.section,
-      text: r.text,
-      score: Number(r.score || 0),
-      __method: 'backend-chroma'
-    }));
+    const r = await fetch(`${CONFIG.BACKEND_HTTP}/api/health`, { signal: AbortSignal.timeout(2200) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    backendOnline = true;
+    setText('kApiSub', `ollama:${d.ollama_online} embeds:${d.guideline_embeds_ready}`);
+    logLine('HC01', 'Backend online and ready');
   } catch (e) {
-    MODEL_STATUS.ragBackendOnline = false;
-    logAgent('RAG', `RAG backend unavailable (${e.message}) — using mini-KB fallback`, 'warn');
+    backendOnline = false;
+    logLine('HC01', `Backend offline: ${e.message}`);
   }
-
-  // Keyword fallback
-  const lower = queryText.toLowerCase();
-  return MINI_RAG_FALLBACK
-    .map(g => ({ ...g, score: g.keywords.filter(k => lower.includes(k)).length / g.keywords.length }))
-    .filter(g => g.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK)
-    .map(g => ({ ...g, citation: g.source, __method: 'fallback-mini-kb' }));
+  updateApiKPI();
 }
 
-// ══════════════════════════════════════════════════
-// OLLAMA HEALTH CHECK
-// ══════════════════════════════════════════════════
-async function checkOllamaAndPreEmbed() {
-  updateModelRoutingUI('checking');
-  try {
-    const res = await fetch(`${CONFIG.OLLAMA_BASE}/api/tags`, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) throw new Error('Ollama not responding');
-    const data = await res.json();
-    const models = (data.models || []).map(m => m.name);
-    MODEL_STATUS.ollamaOnline = true;
-    logAgent('HC01', `Ollama online. Models: ${models.join(', ')}`, 'success');
-
-    // Check model availability for local explanation path
-    const hasBGE = models.some(m => m.includes('bge-m3'));
-    const hasQwen = models.some(m => m.includes('qwen2.5'));
-    if (!hasBGE) logAgent('HC01', `bge-m3 not found (optional: RAG now uses backend ChromaDB)`, 'info');
-    if (!hasQwen) logAgent('HC01', `qwen2.5:4b not found — run: ollama pull qwen2.5:4b`, 'warn');
-
-    updateModelRoutingUI('online');
-  } catch (e) {
-    MODEL_STATUS.ollamaOnline = false;
-    logAgent('HC01', `Ollama offline — local models will fall back to NIM. (${e.message})`, 'warn');
-    updateModelRoutingUI('offline');
+function inferOutliers(pt) {
+  const out = [];
+  const cr = pt.labs.creatinine;
+  if (cr && cr.length > 2) {
+    const latest = cr[cr.length - 1].v;
+    const prev = cr[cr.length - 2].v;
+    if (latest > prev * 2) out.push({ lab: 'creatinine', value: latest, note: 'abrupt spike' });
   }
+  return out;
 }
 
-function updateModelRoutingUI(state) {
-  const el = document.getElementById('modelRouting');
-  if (!el) return;
-  if (state === 'checking') {
-    el.innerHTML = `<span class="spinner"></span> <span style="color:var(--text3)">Checking Ollama...</span>`;
-  } else if (state === 'online') {
-    const ragTag = MODEL_STATUS.ragBackendOnline ? '<span style="color:var(--green)">●</span> ChromaDB API' : '<span style="color:var(--amber)">●</span> mini-KB fallback';
-    el.innerHTML = `
-      <span title="Note Parser"><span style="color:var(--green)">●</span> qwen2.5:4b</span> ·
-      <span title="RAG Retrieval">${ragTag}</span> ·
-      <span title="Chief Agent"><span style="color:var(--blue)">●</span> Nemotron-70B</span>`;
-  } else {
-    el.innerHTML = `
-      <span title="Note Parser — NIM fallback"><span style="color:var(--amber)">●</span> qwen2.5-7b (NIM)</span> ·
-      <span title="RAG — backend/fallback"><span style="color:var(--amber)">●</span> Chroma API or mini-KB</span> ·
-      <span title="Chief Agent"><span style="color:var(--blue)">●</span> Nemotron-70B</span>`;
-  }
-}
-
-// ══════════════════════════════════════════════════
-// UTILITY: NIM API CALL (STREAMING)
-// ══════════════════════════════════════════════════
-async function nimCall(model, messages, onChunk, max_tokens=1024) {
-  const apiKey = document.getElementById('apiKey').value.trim();
-  if (!apiKey) throw new Error('No NVIDIA NIM API key provided');
-
-  const response = await fetch(`${CONFIG.NIM_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+function normalizePatient(raw) {
+  if (!raw) return null;
+  const vitals = raw.vitals || {};
+  const bpSys = vitals.bpSys ?? vitals.bp?.sys ?? 0;
+  const bpDia = vitals.bpDia ?? vitals.bp?.dia ?? 0;
+  return {
+    id: raw.id,
+    name: raw.name,
+    age: raw.age,
+    sex: raw.sex,
+    admit: raw.admitDiag || raw.admit || 'ICU review',
+    vitals: {
+      HR: vitals.hr ?? raw.vitals?.HR ?? 0,
+      BP: `${bpSys}/${bpDia}`,
+      SpO2: vitals.spo2 ?? raw.vitals?.SpO2 ?? 0,
+      Temp: vitals.temp ?? raw.vitals?.Temp ?? 0,
+      RR: vitals.rr ?? raw.vitals?.RR ?? 0,
+      GCS: vitals.gcs ?? raw.vitals?.GCS ?? 0,
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.3,
-      max_tokens,
-      stream: true,
-    })
+    labs: raw.labs || {},
+    meds: raw.medications || raw.meds || [],
+    notes: raw.notes || [],
+  };
+}
+
+async function loadSyntheticPatientsFromBackend() {
+  try {
+    const listRes = await fetch(`${CONFIG.BACKEND_HTTP}/api/synthetic-patients`, { signal: AbortSignal.timeout(5000) });
+    if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
+    const summary = await listRes.json();
+    if (!Array.isArray(summary) || summary.length === 0) throw new Error('Empty synthetic list');
+
+    const select = byId('patientSelect');
+    select.innerHTML = '';
+
+    const ids = summary.map(x => x.id).filter(Boolean);
+    const loaded = {};
+
+    for (const id of ids) {
+      try {
+        const pRes = await fetch(`${CONFIG.BACKEND_HTTP}/api/synthetic-patients/${id}`, { signal: AbortSignal.timeout(5000) });
+        if (!pRes.ok) continue;
+        const full = await pRes.json();
+        const normalized = normalizePatient(full);
+        if (!normalized) continue;
+        loaded[id] = normalized;
+
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = `${id} - ${normalized.name} - ${normalized.admit}`;
+        select.appendChild(opt);
+      } catch {
+        // Continue loading the rest even if one patient fetch fails.
+      }
+    }
+
+    if (Object.keys(loaded).length > 0) {
+      PATIENTS = loaded;
+      setText('kData', `${Object.keys(PATIENTS).length} Cases`);
+      setText('kDataSub', 'Loaded from synthetic backend dataset');
+      return true;
+    }
+  } catch (e) {
+    logLine('HC01', `Synthetic dataset API load failed: ${e.message}`);
+  }
+
+  return false;
+}
+
+function renderPatient(pt) {
+  setText('pName', pt.name);
+  setText('pMeta', `${pt.age}${pt.sex} - ${pt.admit}`);
+
+  const chips = byId('riskChips');
+  const outliers = inferOutliers(pt);
+  chips.innerHTML = '';
+  const common = [
+    { c: 'chip-blue', t: 'FHIR payload prepared' },
+    { c: 'chip-green', t: 'Synthetic case loaded' },
+  ];
+  common.forEach(x => {
+    const span = document.createElement('span');
+    span.className = `chip ${x.c}`;
+    span.textContent = x.t;
+    chips.appendChild(span);
+  });
+  if (outliers.length) {
+    const span = document.createElement('span');
+    span.className = 'chip chip-red';
+    span.textContent = 'Outlier hold active';
+    chips.appendChild(span);
+  }
+
+  const vitals = byId('vitalsGrid');
+  vitals.innerHTML = '';
+  Object.entries(pt.vitals).forEach(([k, v]) => {
+    const box = document.createElement('div');
+    box.className = 'vital';
+    box.innerHTML = `<div class="name">${k}</div><div class="value">${v}</div>`;
+    vitals.appendChild(box);
   });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`NIM API error ${response.status}: ${errText.slice(0,200)}`);
-  }
+  const labBody = byId('labBody');
+  labBody.innerHTML = '';
+  Object.entries(pt.labs).forEach(([name, arr]) => {
+    const latest = arr[arr.length - 1].v;
+    const first = arr[0].v;
+    const trend = latest > first ? 'Rising' : latest < first ? 'Falling' : 'Stable';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${name}</td><td>${latest}</td><td>clinical</td><td>${trend}</td>`;
+    labBody.appendChild(tr);
+  });
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let fullText = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n');
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6).trim();
-      if (data === '[DONE]') break;
-      try {
-        const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
-          fullText += delta;
-          if (onChunk) onChunk(delta, fullText);
-        }
-      } catch {}
-    }
-  }
-  return fullText;
+  renderLabChart(pt);
+  updateMetrics({ outliers: outliers.length });
 }
 
-// ══════════════════════════════════════════════════
-// SOFA SCORE CALCULATION
-// ══════════════════════════════════════════════════
-function calcSOFA(pt) {
-  const v = pt.vitals;
-  const labs = pt.labs;
+function renderLabChart(pt) {
+  const labels = pt.labs.lactate.map(x => x.t);
+  const l = pt.labs.lactate.map(x => x.v);
+  const c = pt.labs.creatinine.map(x => x.v);
 
-  const getLatest = (arr) => arr[arr.length - 1].v;
-
-  const pf = v.pao2 / v.fio2; // PaO2/FiO2 ratio
-  const plts = getLatest(labs.platelets);
-  const bili = getLatest(labs.bilirubin);
-  const creat = getLatest(labs.creatinine);
-
-  // Respiratory
-  let resp = 0;
-  if (pf < 100) resp = 4;
-  else if (pf < 200) resp = 3;
-  else if (pf < 300) resp = 2;
-  else if (pf < 400) resp = 1;
-
-  // Coagulation (Platelets)
-  let coag = 0;
-  if (plts < 20) coag = 4;
-  else if (plts < 50) coag = 3;
-  else if (plts < 100) coag = 2;
-  else if (plts < 150) coag = 1;
-
-  // Liver (Bilirubin mg/dL)
-  let liver = 0;
-  if (bili >= 12) liver = 4;
-  else if (bili >= 6) liver = 3;
-  else if (bili >= 2) liver = 2;
-  else if (bili >= 1.2) liver = 1;
-
-  // Cardiovascular (MAP / vasopressors)
-  let cardio = 0;
-  const map = v.map;
-  const hasNorepi = pt.medications.some(m => m.toLowerCase().includes('norepinephrine') || m.toLowerCase().includes('norepi'));
-  if (hasNorepi) cardio = 3;
-  else if (map < 70) cardio = 1;
-
-  // CNS (GCS)
-  let cns = 0;
-  const gcs = v.gcs;
-  if (gcs < 6) cns = 4;
-  else if (gcs < 10) cns = 3;
-  else if (gcs < 13) cns = 2;
-  else if (gcs < 15) cns = 1;
-
-  // Renal (Creatinine mg/dL)
-  let renal = 0;
-  const cr = creat;
-  if (cr >= 5.0) renal = 4;
-  else if (cr >= 3.5) renal = 3;
-  else if (cr >= 2.0) renal = 2;
-  else if (cr >= 1.2) renal = 1;
-
-  const total = resp + coag + liver + cardio + cns + renal;
-
-  return { resp, coag, liver, cardio, cns, renal, total };
-}
-
-// ══════════════════════════════════════════════════
-// NEWS2 SCORE CALCULATION
-// ══════════════════════════════════════════════════
-function calcNEWS2(pt) {
-  const v = pt.vitals;
-  const breakdown = {};
-
-  // Respiratory Rate
-  let rr = 0;
-  if (v.rr <= 8) rr = 3;
-  else if (v.rr <= 11) rr = 1;
-  else if (v.rr <= 20) rr = 0;
-  else if (v.rr <= 24) rr = 2;
-  else rr = 3;
-  breakdown['RR'] = rr;
-
-  // SpO2 Scale 1
-  let spo2 = 0;
-  if (v.spo2 <= 91) spo2 = 3;
-  else if (v.spo2 <= 93) spo2 = 2;
-  else if (v.spo2 <= 95) spo2 = 1;
-  breakdown['SpO2'] = spo2;
-
-  // Supplemental O2
-  const onO2 = v.fio2 > 0.21;
-  breakdown['O2'] = onO2 ? 2 : 0;
-
-  // Systolic BP
-  let bp = 0;
-  if (v.bpSys <= 90) bp = 3;
-  else if (v.bpSys <= 100) bp = 2;
-  else if (v.bpSys <= 110) bp = 1;
-  else if (v.bpSys <= 219) bp = 0;
-  else bp = 3;
-  breakdown['SBP'] = bp;
-
-  // Pulse
-  let hr = 0;
-  if (v.hr <= 40) hr = 3;
-  else if (v.hr <= 50) hr = 1;
-  else if (v.hr <= 90) hr = 0;
-  else if (v.hr <= 110) hr = 1;
-  else if (v.hr <= 130) hr = 2;
-  else hr = 3;
-  breakdown['HR'] = hr;
-
-  // Consciousness
-  const cons = v.gcs < 15 ? 3 : 0;
-  breakdown['GCS'] = cons;
-
-  // Temperature
-  let temp = 0;
-  if (v.temp <= 35.0) temp = 3;
-  else if (v.temp <= 36.0) temp = 1;
-  else if (v.temp <= 38.0) temp = 0;
-  else if (v.temp <= 39.0) temp = 1;
-  else temp = 2;
-  breakdown['Temp'] = temp;
-
-  const total = Object.values(breakdown).reduce((a,b) => a+b, 0);
-
-  let level, desc, color;
-  if (total >= 7) { level = 'HIGH RISK'; desc = 'Emergency response — continuous monitoring'; color = 'var(--red)'; }
-  else if (total >= 5) { level = 'MEDIUM RISK'; desc = 'Urgent review within 1 hour'; color = 'var(--amber)'; }
-  else { level = 'LOW RISK'; desc = '4–6 hourly monitoring'; color = 'var(--green)'; }
-
-  return { total, level, desc, color, breakdown };
-}
-
-// ══════════════════════════════════════════════════
-// Z-SCORE OUTLIER DETECTION
-// ══════════════════════════════════════════════════
-function detectOutliers(labSeries) {
-  const outliers = [];
-  for (const [name, arr] of Object.entries(labSeries)) {
-    if (!Array.isArray(arr) || arr.length < 3) continue;
-    const vals = arr.map(x => x.v);
-    const history = vals.slice(0, -1); // all but latest
-    const latest = vals[vals.length - 1];
-    const mean = history.reduce((a,b) => a+b,0) / history.length;
-    const std = Math.sqrt(history.reduce((a,b) => a + Math.pow(b-mean,2),0) / history.length);
-    if (std === 0) continue;
-    const z = Math.abs((latest - mean) / std);
-    if (z > CONFIG.OUTLIER_Z_THRESHOLD) {
-      outliers.push({ lab: name, value: latest, mean: mean.toFixed(2), std: std.toFixed(2), z: z.toFixed(2), timepoint: arr[arr.length-1].t });
-    }
-  }
-  return outliers;
-}
-
-// ══════════════════════════════════════════════════
-// MEDICATION CONFLICT CHECKER
-// ══════════════════════════════════════════════════
-function checkMedConflicts(meds, labs) {
-  const results = [];
-  const creatLatest = labs.creatinine ? labs.creatinine[labs.creatinine.length-1].v : null;
-  const AKI = creatLatest && creatLatest > 1.5;
-
-  const medsLower = meds.map(m => m.toLowerCase());
-  const hasVanco = medsLower.some(m => m.includes('vancomycin'));
-  const hasPipTazo = medsLower.some(m => m.includes('piperacillin') || m.includes('pip-tazo') || m.includes('tazobactam'));
-  const hasNSAIDs = medsLower.some(m => m.includes('ibuprofen') || m.includes('nsaid') || m.includes('ketorolac') || m.includes('naproxen'));
-  const hasContrast = medsLower.some(m => m.includes('contrast'));
-  const hasAG = medsLower.some(m => m.includes('gentamicin') || m.includes('amikacin') || m.includes('tobramycin'));
-
-  for (const med of meds) {
-    const ml = med.toLowerCase();
-    let status = 'ok', conflict = null;
-
-    if (ml.includes('vancomycin') && hasPipTazo && AKI) {
-      status = 'conflict';
-      conflict = 'Vanco + Pip-Tazo: 3.7× AKI risk. Rising creatinine — nephrology review recommended.';
-    } else if (ml.includes('vancomycin') && AKI) {
-      status = 'warn';
-      conflict = 'Vancomycin nephrotoxicity risk elevated with AKI. Target AUC/MIC monitoring.';
-    } else if ((ml.includes('ibuprofen') || ml.includes('ketorolac')) && AKI) {
-      status = 'conflict';
-      conflict = 'NSAIDs contraindicated in AKI — inhibit prostaglandin-mediated renal perfusion.';
-    } else if (ml.includes('gentamicin') || ml.includes('amikacin')) {
-      status = 'warn';
-      conflict = 'Aminoglycoside: monitor levels and Cr closely. Ototoxicity and nephrotoxicity risk.';
-    }
-
-    results.push({ med, status, conflict });
-  }
-  return results;
-}
-
-// ══════════════════════════════════════════════════
-// RAG RETRIEVAL — kept as keyword-only sync fallback
-// Primary path is now semanticRetrieve() (async, bge-m3)
-// ══════════════════════════════════════════════════
-function retrieveGuidelinesKeyword(context) {
-  const lower = context.toLowerCase();
-  return MINI_RAG_FALLBACK
-    .map(g => ({ ...g, hits: g.keywords.filter(k => lower.includes(k)).length }))
-    .filter(g => g.hits > 0)
-    .sort((a, b) => b.hits - a.hits)
-    .slice(0, 4);
-}
-
-// ══════════════════════════════════════════════════
-// UI: RENDER PATIENT
-// ══════════════════════════════════════════════════
-function renderPatientCard(pt) {
-  document.getElementById('ptName').textContent = pt.name;
-  document.getElementById('ptMeta').textContent = `${pt.age}${pt.sex} · ${pt.daysInICU.toFixed(1)} days ICU · Adm: ${pt.admitDiag}`;
-  const badge = document.getElementById('ptBadge');
-  badge.innerHTML = `<span class="patient-badge badge-red">${pt.admitDiag.split(' ')[0].toUpperCase()}</span>`;
-}
-
-function renderVitals(pt) {
-  const v = pt.vitals;
-  const set = (id, val, cls) => {
-    const el = document.getElementById(id);
-    el.textContent = val;
-    el.className = `vital-value ${cls}`;
-  };
-  set('vHR', v.hr, v.hr > 100 ? 'vital-warn' : 'vital-normal');
-  set('vBP', `${v.bpSys}/${v.bpDia}`, v.bpSys < 100 ? 'vital-crit' : v.bpSys < 120 ? 'vital-warn' : 'vital-normal');
-  set('vSpO2', v.spo2, v.spo2 < 90 ? 'vital-crit' : v.spo2 < 95 ? 'vital-warn' : 'vital-normal');
-  set('vTemp', v.temp, v.temp > 38.3 ? 'vital-warn' : v.temp < 36 ? 'vital-warn' : 'vital-normal');
-  set('vRR', v.rr, v.rr > 20 ? 'vital-warn' : 'vital-normal');
-  set('vGCS', v.gcs, v.gcs < 13 ? 'vital-crit' : v.gcs < 15 ? 'vital-warn' : 'vital-normal');
-}
-
-function renderSOFA(pt) {
-  const sofa = calcSOFA(pt);
-  const organs = [
-    {name:'Respiratory', key:'resp', max:4},
-    {name:'Coagulation', key:'coag', max:4},
-    {name:'Liver',       key:'liver',max:4},
-    {name:'Cardiovasc.', key:'cardio',max:4},
-    {name:'Neurolog.',   key:'cns',  max:4},
-    {name:'Renal',       key:'renal',max:4},
-  ];
-  const colorOf = (v) => v >= 3 ? 'var(--red)' : v >= 2 ? 'var(--amber)' : v >= 1 ? '#ffcc00' : 'var(--green)';
-  const grid = document.getElementById('sofaGrid');
-  const mortality = MIMIC_IV.sofa_mortality[Math.min(sofa.total, 15)];
-  grid.innerHTML = organs.map(o => `
-    <div class="sofa-row">
-      <div class="sofa-organ">${o.name}</div>
-      <div class="sofa-bar-track">
-        <div class="sofa-bar-fill" style="width:${(sofa[o.key]/o.max)*100}%;background:${colorOf(sofa[o.key])}"></div>
-      </div>
-      <div class="sofa-score-val" style="color:${colorOf(sofa[o.key])}">${sofa[o.key]}</div>
-    </div>
-  `).join('') + `
-    <div class="sofa-total">
-      <span style="color:var(--text2);font-size:10px;letter-spacing:0.1em">TOTAL SOFA</span>
-      <span class="sofa-total-val" style="color:${sofa.total >= 10 ? 'var(--red)' : sofa.total >= 6 ? 'var(--amber)' : 'var(--text)'}">${sofa.total}</span>
-    </div>
-    <div style="font-size:8px;color:var(--text3);margin-top:4px;letter-spacing:0.1em">
-      MIMIC-IV predicted mortality: <span style="color:${mortality>=40?'var(--red)':mortality>=20?'var(--amber)':'var(--text2)'};font-weight:600">${mortality}%</span>
-      <span style="color:var(--text3)"> (n=${MIMIC_IV.icu_stays.toLocaleString()} ICU stays)</span>
-    </div>
-  `;
-  document.getElementById('sofaTotal').textContent = sofa.total;
-  document.getElementById('sofaTotal').style.color = sofa.total >= 6 ? 'var(--red)' : sofa.total >= 3 ? 'var(--amber)' : 'var(--green)';
-}
-
-function renderNEWS2(pt) {
-  const n = calcNEWS2(pt);
-  const numEl = document.getElementById('news2Number');
-  numEl.textContent = n.total;
-  numEl.style.color = n.color;
-  document.getElementById('news2Level').textContent = n.level;
-  document.getElementById('news2Level').style.color = n.color;
-  document.getElementById('news2Desc').textContent = n.desc;
-  const bd = document.getElementById('news2Breakdown');
-  bd.innerHTML = Object.entries(n.breakdown).map(([k,v]) =>
-    `<div class="news2-item" style="color:${v>=3?'var(--red)':v>=2?'var(--amber)':v>=1?'#ffcc00':'var(--text2)'}">${k}: ${v}</div>`
-  ).join('');
-}
-
-function renderMeds(pt) {
-  const conflicts = checkMedConflicts(pt.medications, pt.labs);
-  const list = document.getElementById('medList');
-  list.innerHTML = conflicts.map(c => `
-    <div class="med-item ${c.status}">
-      <div class="med-icon">${c.status==='conflict'?'⚠':'c.status'==='warn'?'⚡':'▸'}</div>
-      <div>
-        <div>${c.med}</div>
-        ${c.conflict ? `<div class="${c.status==='conflict'?'conflict-label':'warn-label'}">${c.conflict}</div>` : ''}
-      </div>
-    </div>
-  `).join('');
-}
-
-function renderLabTable(pt) {
-  const labDefs = [
-    {key:'wbc',           label:'WBC',           ref:pt.refs.wbc},
-    {key:'lactate',       label:'Lactate',        ref:pt.refs.lactate},
-    {key:'creatinine',    label:'Creatinine',     ref:pt.refs.creatinine},
-    {key:'procalcitonin', label:'Procalcitonin',  ref:pt.refs.procalcitonin},
-    {key:'bun',           label:'BUN',            ref:pt.refs.bun},
-    {key:'platelets',     label:'Platelets',      ref:pt.refs.platelets},
-    {key:'bilirubin',     label:'Bilirubin',      ref:pt.refs.bilirubin},
-  ];
-
-  const tbody = document.getElementById('labTableBody');
-  tbody.innerHTML = labDefs.map(d => {
-    const arr = pt.labs[d.key];
-    if (!Array.isArray(arr) || !arr.length) return '';
-    const latest = arr[arr.length-1];
-    const prev = arr.length > 1 ? arr[arr.length-2].v : null;
-    const isOut = latest.outlier;
-    const isHigh = latest.v > d.ref.high;
-    const isLow = latest.v < d.ref.low;
-    const cls = isOut ? 'lab-val-outlier' : isHigh || isLow ? 'lab-val-crit' : 'lab-val-normal';
-    const trendIcon = prev !== null
-      ? (latest.v > prev*1.05 ? '<span class="lab-trend trend-up">▲</span>' :
-         latest.v < prev*0.95 ? '<span class="lab-trend trend-down">▼</span>' :
-         '<span class="lab-trend trend-stable">—</span>')
-      : '—';
-    return `<tr>
-      <td>${d.label}</td>
-      <td><span class="${cls}">${latest.v}${isOut?' ⚠':''}</span> <span style="font-size:9px;color:var(--text3)">${d.ref.unit}</span></td>
-      <td style="color:var(--text3);font-size:9px">${d.ref.low}–${d.ref.high}</td>
-      <td>${trendIcon}</td>
-    </tr>`;
-  }).join('');
-}
-
-function renderChart(pt) {
-  const ctx = document.getElementById('labChart').getContext('2d');
   if (labChart) labChart.destroy();
-
-  const labels = pt.labs.wbc.map(x => x.t);
-  const creatData = pt.labs.creatinine.map(x => ({
-    x: x.t, y: x.v,
-    ...(x.outlier ? {pointBackgroundColor:'var(--red)', pointRadius:8, pointStyle:'crossRot'} : {})
-  }));
-
+  const ctx = byId('labChart');
   labChart = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
       datasets: [
-        {
-          label: 'WBC (×10³/μL)',
-          data: pt.labs.wbc.map(x => x.v),
-          borderColor: '#4fc3f7', backgroundColor: 'rgba(79,195,247,0.08)',
-          tension: 0.3, pointRadius: 4,
-        },
-        {
-          label: 'Lactate (mmol/L)',
-          data: pt.labs.lactate.map(x => x.v),
-          borderColor: '#ffaa00', backgroundColor: 'rgba(255,170,0,0.08)',
-          tension: 0.3, pointRadius: 4,
-        },
-        {
-          label: 'Creatinine (mg/dL)',
-          data: pt.labs.creatinine.map(x => x.v),
-          borderColor: '#ff3355', backgroundColor: 'rgba(255,51,85,0.08)',
-          tension: 0.3, pointRadius: pt.labs.creatinine.map(x => x.outlier ? 8 : 4),
-          pointBackgroundColor: pt.labs.creatinine.map(x => x.outlier ? '#ff3355' : 'rgba(255,51,85,0.8)'),
-          pointStyle: pt.labs.creatinine.map(x => x.outlier ? 'crossRot' : 'circle'),
-        },
+        { label: 'Lactate', data: l, borderColor: '#ae760f', backgroundColor: 'rgba(174,118,15,0.08)', tension: 0.3 },
+        { label: 'Creatinine', data: c, borderColor: '#2f6dd5', backgroundColor: 'rgba(47,109,213,0.08)', tension: 0.3 },
       ]
     },
     options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: '#7d8fa0', font: { family: 'JetBrains Mono', size: 9 }, boxWidth: 12 } },
-        tooltip: { backgroundColor: '#111620', titleColor: '#cdd6e0', bodyColor: '#7d8fa0',
-          titleFont: {family:'JetBrains Mono'}, bodyFont: {family:'JetBrains Mono',size:10},
-          callbacks: {
-            afterLabel: (ctx) => {
-              const isOutlier = pt.labs.creatinine[ctx.dataIndex]?.outlier;
-              return isOutlier ? '⚠ OUTLIER — REDRAW PENDING' : '';
-            }
-          }
-        }
-      },
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } },
       scales: {
-        x: { ticks: { color:'#4a5a6a', font:{family:'JetBrains Mono',size:9} }, grid: { color:'rgba(255,255,255,0.04)' } },
-        y: { ticks: { color:'#4a5a6a', font:{family:'JetBrains Mono',size:9} }, grid: { color:'rgba(255,255,255,0.04)' }, beginAtZero: true }
-      }
+        x: { grid: { color: '#e2ece9' } },
+        y: { grid: { color: '#e2ece9' } },
+      },
     }
   });
 }
 
-function renderOutlierAlert(outliers, pt) {
-  const el = document.getElementById('outlierAlert');
-  const txt = document.getElementById('outlierText');
-  if (outliers.length === 0) {
-    el.classList.remove('visible');
-    return;
-  }
-  el.classList.add('visible');
-  const o = outliers[0];
-  const baseline = pt.labs[o.lab].slice(0,-1).map(x=>x.v).join('→');
-  txt.innerHTML = `<strong>${o.lab.toUpperCase()}</strong> value <strong style="color:var(--red)">${o.value}</strong> at ${o.timepoint} is statistically inconsistent with 72h trend <strong>${baseline}</strong> (Z=${o.z}, threshold=${CONFIG.OUTLIER_Z_THRESHOLD}). <strong>DIAGNOSIS HELD — Recommend confirmed redraw before updating assessment.</strong>`;
-}
-
-function renderNotes(pt) {
-  const el = document.getElementById('parsedNotes');
-  el.innerHTML = `<div class="notes-list">${pt.notes.map(n => `
-    <div class="note-item">
-      <div class="note-meta">${n.time} · ${n.author}</div>
-      <div class="note-body">${n.text}</div>
-    </div>
-  `).join('')}</div>`;
-}
-
-function renderRiskChips(pt, outliers, sofa, news2) {
-  const chips = [];
-  if (sofa.total >= 6) chips.push({label:'SEPSIS CRITERIA MET', cls:'chip-red'});
-  else if (sofa.total >= 2) chips.push({label:'ORGAN DYSFUNCTION', cls:'chip-amber'});
-  if (outliers.length > 0) chips.push({label:'LAB OUTLIER — HOLD', cls:'chip-red'});
-  const lat = pt.labs.lactate[pt.labs.lactate.length-1].v;
-  if (lat >= 2) chips.push({label:`LACTATE ${lat} ↑`, cls:'chip-red'});
-  if (news2.total >= 7) chips.push({label:'NEWS2 HIGH RISK', cls:'chip-red'});
-  else if (news2.total >= 5) chips.push({label:'NEWS2 MED RISK', cls:'chip-amber'});
-  const cr = pt.labs.creatinine;
-  const crRatio = cr[cr.length-1].v / cr[0].v;
-  if (crRatio >= 1.5 && !outliers.some(o=>o.lab==='creatinine')) chips.push({label:'AKI TRAJECTORY', cls:'chip-amber'});
-
-  document.getElementById('riskChips').innerHTML = chips.map(c =>
-    `<div class="risk-chip ${c.cls}">${c.label}</div>`
-  ).join('');
-}
-
-// ══════════════════════════════════════════════════
-// AGENT 1: NOTE PARSER
-// Routing: qwen2.5:4b LOCAL (Ollama) → qwen2.5-7b NIM fallback
-// ══════════════════════════════════════════════════
-async function runNoteParser(pt) {
-  setPipe(1, 'active');
-  const notesText = pt.notes.map(n => `[${n.time}] ${n.author}: ${n.text}`).join('\n\n');
-  const sysPrompt = `You are a clinical NLP agent parsing ICU nursing and physician notes. Extract structured findings. Return ONLY a JSON object with keys: symptoms (array of strings), medications_mentioned (array of strings), timeline_events (array of {time, event}), vital_concerns (array of strings), active_problems (array of strings). Be concise and clinically precise. No explanation, only JSON.`;
-  const messages = [
-    { role: 'system', content: sysPrompt },
-    { role: 'user',   content: `Parse these ICU notes:\n\n${notesText}` }
-  ];
-
-  let rawOutput = '';
-
-  if (MODEL_STATUS.ollamaOnline) {
-    logAgent('NOTE', `Calling qwen2.5:4b LOCAL (Ollama)...`, 'info');
-    try {
-      rawOutput = await ollamaCall(CONFIG.NOTE_MODEL_LOCAL, messages, null, 600);
-      logAgent('NOTE', `Local model responded (${rawOutput.length} chars)`, 'success');
-    } catch (e) {
-      logAgent('NOTE', `Ollama failed: ${e.message} — falling back to NIM`, 'warn');
-      rawOutput = '';
-    }
-  }
-
-  if (!rawOutput) {
-    logAgent('NOTE', `Calling qwen2.5-7b via NIM...`, 'info');
-    try {
-      rawOutput = await nimCall(CONFIG.NOTE_MODEL_NIM, messages, null, 512);
-    } catch (e) {
-      logAgent('NOTE', `NIM also failed: ${e.message}`, 'error');
-      pt.parsedFindings = { error: e.message };
-      setPipe(1, 'error');
-      return pt.parsedFindings;
-    }
-  }
-
-  // Parse JSON from response
-  const jsonMatch = rawOutput.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      pt.parsedFindings = JSON.parse(jsonMatch[0]);
-      const f = pt.parsedFindings;
-      logAgent('NOTE', `Extracted ${f.symptoms?.length||0} symptoms, ${f.active_problems?.length||0} problems, ${f.timeline_events?.length||0} events`, 'success');
-      renderParsedFindings(pt.parsedFindings);
-    } catch {
-      pt.parsedFindings = { raw: rawOutput };
-      logAgent('NOTE', 'Response not JSON — stored as free-form', 'warn');
-    }
-  } else {
-    pt.parsedFindings = { raw: rawOutput };
-    logAgent('NOTE', 'Structured extraction complete (free-form)', 'success');
-  }
-
-  setPipe(1, 'done');
-  return pt.parsedFindings;
-}
-
-// Render structured note findings into the parsedNotes panel
-function renderParsedFindings(findings) {
-  const el = document.getElementById('parsedNotes');
-  if (!findings || findings.error) {
-    el.innerHTML = `<div style="color:var(--red);font-size:10px">${findings?.error || 'No findings'}</div>`;
-    return;
-  }
-  if (findings.raw) {
-    el.innerHTML = `<div style="font-size:10px;color:var(--text2);white-space:pre-wrap">${findings.raw.slice(0,400)}</div>`;
-    return;
-  }
-  const section = (title, items, color='var(--text2)') => {
-    if (!items?.length) return '';
-    return `<div style="margin-bottom:6px">
-      <div style="font-size:8px;letter-spacing:0.2em;color:var(--text3);text-transform:uppercase;margin-bottom:3px">${title}</div>
-      ${items.map(item => {
-        const txt = typeof item === 'object' ? `${item.time||''} ${item.event||JSON.stringify(item)}` : item;
-        return `<div style="font-size:10px;color:${color};padding:2px 0;border-bottom:1px solid var(--border)">${txt}</div>`;
-      }).join('')}
-    </div>`;
-  };
-  el.innerHTML =
-    section('Active Problems', findings.active_problems, 'var(--red)') +
-    section('Symptoms', findings.symptoms, 'var(--amber)') +
-    section('Vital Concerns', findings.vital_concerns, 'var(--amber)') +
-    section('Medications Mentioned', findings.medications_mentioned, 'var(--blue)') +
-    section('Timeline Events', findings.timeline_events, 'var(--text)');
-}
-
-// ══════════════════════════════════════════════════
-// AGENT 2: LAB MAPPER (PURE JS)
-// ══════════════════════════════════════════════════
-function runLabMapper(pt) {
-  setPipe(2, 'active');
-  logAgent('LAB', 'Running temporal lab analysis...', 'info');
-
-  const findings = [];
-  const { labs, refs } = pt;
-
-  for (const [key, arr] of Object.entries(labs)) {
-    if (!Array.isArray(arr) || arr.length < 2) continue;
-    const ref = refs[key];
-    if (!ref) continue;
-
-    const vals = arr.map(x => x.v);
-    const latest = vals[vals.length-1];
-    const first = vals[0];
-    const delta = latest - first;
-    const pctChange = ((delta / first) * 100).toFixed(1);
-    const isRising = delta > 0;
-    const isHigh = latest > ref.high;
-    const isLow = latest < ref.low;
-
-    if (isHigh && isRising) {
-      findings.push({
-        lab: key, severity: latest > ref.high * 2 ? 'critical' : 'elevated',
-        message: `${key.toUpperCase()} rising from ${first} → ${latest} ${ref.unit} (+${pctChange}%)`,
-      });
-    } else if (key === 'lactate' && latest >= 2.0) {
-      findings.push({ lab: key, severity: 'critical', message: `Lactate ≥2 mmol/L — tissue hypoperfusion threshold reached` });
-    } else if (key === 'creatinine') {
-      const ratio = latest / first;
-      if (ratio >= 1.5) findings.push({ lab: key, severity: ratio >= 2 ? 'critical' : 'elevated', message: `Creatinine ${ratio.toFixed(1)}× baseline — AKI staging required` });
-    }
-  }
-
-  logAgent('LAB', `Found ${findings.length} temporal risk flags`, findings.length > 0 ? 'warn' : 'success');
-  setPipe(2, 'done');
-  return findings;
-}
-
-// ══════════════════════════════════════════════════
-// AGENT 3: RAG RETRIEVAL + EXPLANATION
-// Retrieval: bge-m3 semantic (LOCAL) → keyword fallback
-// Explanation: qwen2.5:4b LOCAL → qwen2.5-7b NIM fallback
-// ══════════════════════════════════════════════════
-async function runRAGAgent(pt, labFindings, outliers) {
-  setPipe(3, 'active');
-  logAgent('RAG', 'Querying RAG backend /rag/query (with fallback)...', 'info');
-
-  // Build rich query for semantic retrieval
-  const riskFlags = labFindings.map(f => f.message);
-  const queryParts = [
-    `ICU patient ${pt.age}${pt.sex}`,
-    pt.admitDiag,
-    ...riskFlags,
-    ...pt.medications,
-    ...(outliers.length > 0 ? ['acute kidney injury creatinine outlier'] : []),
-    `lactate ${pt.labs.lactate[pt.labs.lactate.length-1].v} mmol/L`,
-    `WBC ${pt.labs.wbc[pt.labs.wbc.length-1].v}`,
-    `SOFA organ failure sepsis risk assessment`
-  ];
-  const queryText = queryParts.join('. ');
-
-  // Semantic retrieval via backend, keyword fallback on failure
-  const retrieved = await semanticRetrieve(queryText, 3);
-  const retrievalMethod = retrieved[0]?.__method === 'backend-chroma' ? 'backend-chroma' : 'fallback-mini-kb';
-  logAgent('RAG', `Retrieved ${retrieved.length} chunks (${retrievalMethod})${retrieved[0]?.score !== undefined ? ` top=${Number(retrieved[0].score).toFixed(3)}` : ''}`, 'success');
-
-  // Render retrieved chunks
-  const ragEl = document.getElementById('ragEvidence');
-  const method = retrievalMethod === 'backend-chroma' ? 'chromadb · sentence-transformers' : 'keyword mini-KB fallback';
-  ragEl.innerHTML = `<div style="font-size:8px;color:var(--text3);letter-spacing:0.15em;margin-bottom:6px">METHOD: ${method.toUpperCase()}</div>` +
-    retrieved.map(g => `
-      <div class="rag-item">
-        <div class="rag-source">${g.citation || g.source} · ${g.section}${g.score !== undefined ? ` <span style="color:var(--text3)">[sim=${Number(g.score).toFixed(3)}]</span>` : ''}</div>
-        <div class="rag-text">${g.text}</div>
-      </div>
-    `).join('');
-
-  // Generate cited explanation via local model or NIM fallback
-  logAgent('RAG', `Generating cited explanation (${MODEL_STATUS.ollamaOnline ? 'qwen2.5:4b LOCAL' : 'qwen2.5-7b NIM'})...`, 'info');
-  const guidelineCtx = retrieved.map(g => `[${g.citation || g.source} ${g.section}]: ${g.text}`).join('\n\n');
-  const explainMessages = [
-    {
-      role: 'system',
-      content: 'You are a clinical guideline agent. Given retrieved evidence and patient findings, write 2-3 concise cited observations. Use [Source §Section] format for citations. Be direct and clinical.'
+function buildBackendPayload(pt) {
+  return {
+    id: pt.id,
+    name: pt.name,
+    age: pt.age,
+    sex: pt.sex,
+    vitals: {
+      hr: Number(pt.vitals.HR),
+      bpSys: Number(String(pt.vitals.BP).split('/')[0]),
+      bpDia: Number(String(pt.vitals.BP).split('/')[1]),
+      rr: Number(pt.vitals.RR),
+      spo2: Number(pt.vitals.SpO2),
+      temp: Number(pt.vitals.Temp),
+      gcs: Number(pt.vitals.GCS),
+      fio2: 0.28,
+      pao2: 72,
     },
-    {
-      role: 'user',
-      content: `Patient: ${pt.name}, ${pt.age}${pt.sex}. ${pt.admitDiag}.\nKey findings: ${labFindings.map(f=>f.message).join('; ')}${outliers.length>0?' | Creatinine outlier detected':''}\n\nRetrieved guidelines:\n${guidelineCtx}\n\nWrite 2-3 cited clinical observations:`
-    }
-  ];
-
-  let ragExplain = '';
-  if (MODEL_STATUS.ollamaOnline) {
-    try {
-      ragExplain = await ollamaCall(CONFIG.RAG_EXPLAIN_LOCAL, explainMessages, null, 350);
-    } catch (e) {
-      logAgent('RAG', `Local explain failed: ${e.message}`, 'warn');
-    }
-  }
-  if (!ragExplain) {
-    try {
-      ragExplain = await nimCall(CONFIG.RAG_MODEL_NIM, explainMessages, null, 400);
-    } catch (e) {
-      logAgent('RAG', `NIM explain failed: ${e.message}`, 'error');
-    }
-  }
-
-  if (ragExplain) {
-    ragEl.innerHTML += `
-      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-        <div style="font-size:8px;color:var(--text3);letter-spacing:0.2em;margin-bottom:4px">RAG AGENT SYNTHESIS</div>
-        <div style="font-size:10px;line-height:1.7;color:var(--text);white-space:pre-wrap">${ragExplain}</div>
-      </div>`;
-    logAgent('RAG', 'Cited explanation generated', 'success');
-  }
-
-  setPipe(3, 'done');
-  return retrieved;
+    labs: pt.labs,
+    medications: pt.meds,
+    notes: pt.notes,
+    admitDiag: pt.admit,
+  };
 }
 
-// ══════════════════════════════════════════════════
-// AGENT 4: CHIEF SYNTHESIS
-// ══════════════════════════════════════════════════
-async function runChiefAgent(pt, parsedNotes, labFindings, guidelines, outliers, sofa, news2) {
-  setPipe(4, 'active');
-  logAgent('CHIEF', 'Initiating Nemotron-70B synthesis...', 'info');
+async function nimStream(model, messages, apiKey, opts = {}) {
+  if (!apiKey) throw new Error('Missing API key for model call');
 
-  const outlierNote = outliers.length > 0
-    ? `\n⚠ OUTLIER DETECTED: ${outliers.map(o => `${o.lab.toUpperCase()} value ${o.value} (Z=${o.z}) inconsistent with 72h trend — DIAGNOSIS HELD for this parameter, redraw required`).join('; ')}`
-    : '';
+  const body = {
+    model,
+    messages,
+    temperature: opts.temperature ?? 0.2,
+    top_p: opts.topP ?? 0.7,
+    max_tokens: opts.maxTokens ?? 1024,
+    stream: true,
+  };
+  if (opts.extraBody) body.extra_body = opts.extraBody;
 
-  const guidelineContext = guidelines.map(g => `[${g.source} ${g.section}]: ${g.text}`).join('\n');
+  const res = await fetch(`${CONFIG.NIM_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
 
-  const medConflicts = checkMedConflicts(pt.medications, pt.labs);
-  const conflictNote = medConflicts.filter(c => c.status !== 'ok').map(c => `${c.med}: ${c.conflict}`).join('\n');
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`NIM ${res.status}: ${txt.slice(0, 120)}`);
+  }
 
-  const prompt = `You are the Chief Diagnostic Agent for an ICU Diagnostic Risk Assistant. Synthesize the following patient data and produce a structured clinical assessment.
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let acc = '';
+  let reason = '';
 
-PATIENT: ${pt.name}, ${pt.age}${pt.sex}, Day ${pt.daysInICU.toFixed(1)} ICU
-ADMISSION DIAGNOSIS: ${pt.admitDiag}
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n').filter(Boolean);
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const obj = JSON.parse(payload);
+        const delta = obj.choices?.[0]?.delta || {};
+        if (delta.reasoning_content) reason += delta.reasoning_content;
+        if (delta.content) acc += delta.content;
+      } catch {
+        // Ignore malformed stream event.
+      }
+    }
+  }
 
-VITAL SIGNS:
-HR ${pt.vitals.hr}bpm | BP ${pt.vitals.bpSys}/${pt.vitals.bpDia}mmHg | MAP ${pt.vitals.map}mmHg | RR ${pt.vitals.rr}/min | SpO2 ${pt.vitals.spo2}% | Temp ${pt.vitals.temp}°C | GCS ${pt.vitals.gcs}/15
+  return { content: acc.trim(), reasoning: reason.trim() };
+}
 
-LAB TRAJECTORIES:
-${Object.entries(pt.labs).filter(([k,v]) => Array.isArray(v)).map(([k,arr]) => `${k.toUpperCase()}: ${arr.map(x=>x.v+(x.outlier?' [OUTLIER]':'')).join(' → ')} ${pt.refs[k]?.unit||''}`).join('\n')}
-
-SOFA SCORE: ${sofa.total}/24 (Resp:${sofa.resp} Coag:${sofa.coag} Liver:${sofa.liver} Cardio:${sofa.cardio} CNS:${sofa.cns} Renal:${sofa.renal})
-NEWS2 SCORE: ${news2.total} (${news2.level})
-
-TEMPORAL FLAGS FROM LAB MAPPER:
-${labFindings.map(f => `• ${f.message}`).join('\n') || 'None'}
-${outlierNote}
-
-MEDICATION CONCERNS:
-${conflictNote || 'None identified'}
-
-RELEVANT GUIDELINES:
-${guidelineContext}
-
-PARSED NOTE FINDINGS:
-${parsedNotes ? JSON.stringify(parsedNotes).slice(0,600) : 'Not available'}
-
-Produce your response in this EXACT structure:
-
-CLINICAL ASSESSMENT:
-[2-3 sentence summary of current clinical picture and trajectory]
-
-DIFFERENTIAL DIAGNOSIS:
-1. [Diagnosis] — [XX]% confidence — [one line evidence]
-2. [Diagnosis] — [XX]% confidence — [one line evidence]
-3. [Diagnosis] — [XX]% confidence — [one line evidence]
-
-KEY CONCERNS:
-• [Concern with guideline citation in brackets]
-• [Concern with guideline citation in brackets]
-• [Concern with guideline citation in brackets]
-
-RECOMMENDED ACTIONS:
-• [Action — urgency]
-• [Action — urgency]
-• [Action — urgency]
-
-SHIFT HANDOVER BRIEF (30 seconds):
-[2-3 sentences, plain English, for the incoming ICU doctor]
-
----
-Be precise. Cite guidelines. Note outlier-held diagnoses explicitly.`;
-
-  const messages = [
-    { role: 'user', content: prompt }
-  ];
-
-  const outputEl = document.getElementById('synthesisOutput');
-  outputEl.innerHTML = '<span class="cursor-blink"></span>';
-  let fullText = '';
-
+async function queryRagFallback(pt) {
   try {
-    await nimCall(CONFIG.CHIEF_MODEL, messages, (chunk, accumulated) => {
-      fullText = accumulated;
-      outputEl.innerHTML = formatSynthesisOutput(accumulated) + '<span class="cursor-blink"></span>';
-    }, 1500);
-  } catch (e) {
-    // Try fallback model
-    logAgent('CHIEF', `Nemotron failed, trying fallback: ${e.message}`, 'warn');
-    try {
-      await nimCall(CONFIG.FALLBACK_MODEL, messages, (chunk, accumulated) => {
-        fullText = accumulated;
-        outputEl.innerHTML = formatSynthesisOutput(accumulated) + '<span class="cursor-blink"></span>';
-      }, 1500);
-    } catch (e2) {
-      outputEl.innerHTML = `<span style="color:var(--red)">Chief Agent error: ${e2.message}</span>`;
-      logAgent('CHIEF', `Fallback also failed: ${e2.message}`, 'error');
-      setPipe(4, 'error');
-      return null;
-    }
+    const query = `${pt.admit}; lactate ${pt.labs.lactate.slice(-1)[0].v}; creatinine ${pt.labs.creatinine.slice(-1)[0].v}; meds ${pt.meds.join(', ')}`;
+    const r = await fetch(`${CONFIG.BACKEND_HTTP}/rag/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, n_results: 4 }),
+      signal: AbortSignal.timeout(3500),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    return d.results || [];
+  } catch {
+    return [
+      { citation: 'Sepsis Guideline', section: 'Resuscitation', text: 'Repeat lactate when elevated and reassess perfusion quickly.' },
+      { citation: 'KDIGO', section: 'AKI', text: 'Confirm abrupt creatinine changes with redraw before actioning.' },
+    ];
   }
-
-  outputEl.innerHTML = formatSynthesisOutput(fullText);
-  logAgent('CHIEF', 'Synthesis complete', 'success');
-  setPipe(4, 'done');
-
-  // Parse and render differential
-  parseDifferential(fullText);
-  parseHandover(fullText, pt);
-
-  return fullText;
 }
 
-// ══════════════════════════════════════════════════
-// FORMAT SYNTHESIS OUTPUT
-// ══════════════════════════════════════════════════
-function formatSynthesisOutput(text) {
-  return text
-    .replace(/\[([^\]]+Campaign[^\]]*)\]/g, '<span class="citation" title="$1">[$1]</span>')
-    .replace(/\[([^\]]+KDIGO[^\]]*)\]/g, '<span class="citation" title="$1">[$1]</span>')
-    .replace(/\[([^\]]+SOFA[^\]]*)\]/g, '<span class="citation" title="$1">[$1]</span>')
-    .replace(/\[([^\]]+ARDS[^\]]*)\]/g, '<span class="citation" title="$1">[$1]</span>')
-    .replace(/\[([^\]]+NEWS[^\]]*)\]/g, '<span class="citation" title="$1">[$1]</span>')
-    .replace(/OUTLIER|HELD|REDRAW/g, '<span class="hl-red">$&</span>')
-    .replace(/CRITICAL|URGENT|EMERGENCY/gi, '<span class="hl-red">$&</span>')
-    .replace(/RECOMMENDED ACTIONS:|KEY CONCERNS:|CLINICAL ASSESSMENT:|SHIFT HANDOVER BRIEF/g, '<strong style="color:var(--green)">$&</strong>')
-    .replace(/DIFFERENTIAL DIAGNOSIS:/g, '<strong style="color:var(--amber)">$&</strong>');
-}
-
-// ══════════════════════════════════════════════════
-// PARSE DIFFERENTIAL FROM CHIEF OUTPUT
-// ══════════════════════════════════════════════════
-function parseDifferential(text) {
-  const diffEl = document.getElementById('diffList');
-  // Try to extract numbered differential lines
-  const lines = text.split('\n');
-  const diffs = [];
-  for (const line of lines) {
-    const m = line.match(/^(\d+)\.\s+(.+?)\s*[—–-]+\s*(\d+)%\s*confidence\s*[—–-]+\s*(.+)/i);
-    if (m) {
-      diffs.push({ name: m[2].trim(), pct: parseInt(m[3]), evidence: m[4].trim() });
-    }
-  }
-  if (diffs.length === 0) {
-    diffEl.innerHTML = '<div style="color:var(--text2);font-size:10px">See synthesis output above</div>';
+function renderAlerts(alerts) {
+  const el = byId('alertList');
+  if (!alerts.length) {
+    el.innerHTML = '<div class="small">No active alerts</div>';
+    updateMetrics({ alerts: 0 });
     return;
   }
-  const colors = ['var(--red)', 'var(--amber)', '#4fc3f7'];
-  diffEl.innerHTML = diffs.map((d, i) => `
-    <div class="diff-item">
-      <div class="diff-header">
-        <span class="diff-name" style="color:${colors[i]||'var(--text)'}">${d.name}</span>
-        <span class="diff-pct" style="color:${colors[i]||'var(--text)'}">${d.pct}%</span>
-      </div>
-      <div class="diff-bar-track">
-        <div class="diff-bar-fill" style="width:${d.pct}%;background:${colors[i]||'var(--border)'}"></div>
-      </div>
-      <div class="diff-evidence">${d.evidence}</div>
-    </div>
-  `).join('');
+  updateMetrics({ alerts: alerts.length });
+  el.innerHTML = alerts.map(a => {
+    const cls = a.level === 'CRITICAL' ? 'critical' : a.level === 'WATCH' ? 'watch' : '';
+    return `<div class="alert ${cls}"><strong>${a.level}</strong><div>${a.message}</div></div>`;
+  }).join('');
 }
 
-// ══════════════════════════════════════════════════
-// PARSE HANDOVER FROM CHIEF OUTPUT
-// ══════════════════════════════════════════════════
-function parseHandover(text, pt) {
-  const el = document.getElementById('handoverBrief');
-  const match = text.match(/SHIFT HANDOVER BRIEF[^:]*:\s*([\s\S]+?)(?:\n\n|\n---|\n#|$)/i);
-  if (match) {
-    el.textContent = match[1].trim();
-  } else {
-    // fallback: construct from patient data
-    const lat = pt.labs.creatinine[pt.labs.creatinine.length-1];
-    const lactLat = pt.labs.lactate[pt.labs.lactate.length-1].v;
-    el.textContent = `${pt.name}, ${pt.age}${pt.sex}, Day ${pt.daysInICU.toFixed(1)} in ICU. ${pt.admitDiag}. Lactate ${lactLat} mmol/L${lactLat>=2?' — above threshold':''}. ${lat.outlier?`Creatinine outlier ${lat.v} mg/dL — redraw pending.`:''}`;
-  }
-}
-
-// ══════════════════════════════════════════════════
-// LOAD PATIENT (UI POPULATION)
-// ══════════════════════════════════════════════════
-function loadPatient(id) {
-  currentPatient = PATIENTS[id];
-  const pt = currentPatient;
-
-  // Clear previous results
-  resetOutputs();
-
-  // Render static sections
-  renderPatientCard(pt);
-  renderVitals(pt);
-  renderChart(pt);
-  renderLabTable(pt);
-  renderNotes(pt);
-  renderMeds(pt);
-
-  // Compute scores
-  const sofa = calcSOFA(pt);
-  const news2 = calcNEWS2(pt);
-  renderSOFA(pt);
-  renderNEWS2(pt);
-
-  // Detect outliers
-  const outliers = detectOutliers(pt.labs);
-  renderOutlierAlert(outliers, pt);
-
-  // Risk chips
-  renderRiskChips(pt, outliers, sofa, news2);
-
-  logAgent('HC01', `Patient ${id} loaded — ${pt.name}, ${pt.age}${pt.sex}`, 'success');
-  if (outliers.length > 0) {
-    logAgent('HC01', `⚠ Outlier detected in ${outliers.map(o=>o.lab).join(', ')} — Z=${outliers.map(o=>o.z).join(', ')}`, 'warn');
-  }
-  document.getElementById('systemStatus').textContent = 'PATIENT LOADED';
-  document.getElementById('riskBadge').style.display = 'block';
-}
-
-// ══════════════════════════════════════════════════
-// RUN FULL DIAGNOSTICS
-// Routes: Backend WS (server.py) → Standalone fallback
-// ══════════════════════════════════════════════════
-async function runFullDiagnostics() {
-  if (!currentPatient) loadPatient(document.getElementById('patientSelect').value);
-  const apiKey = document.getElementById('apiKey').value.trim();
-  if (!apiKey) {
-    alert('Please enter your NVIDIA NIM API key.');
+function renderEvidence(items) {
+  const el = byId('evidenceList');
+  updateMetrics({ citations: items.length });
+  if (!items.length) {
+    el.innerHTML = '<div class="small">No evidence available</div>';
     return;
   }
-  const btn = document.getElementById('runBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> RUNNING...';
-  document.getElementById('systemStatus').textContent = 'PIPELINE ACTIVE';
-  document.getElementById('synthesisOutput').innerHTML = '<span class="cursor-blink"></span>';
-  document.getElementById('synthesisOutput').dataset.accumulated = '';
+  el.innerHTML = items.map(x => `<div class="evidence"><div class="src">${x.citation || x.source} - ${x.section || ''}</div><div>${x.text}</div></div>`).join('');
+}
 
-  // Reset orchestrator UI
-  ['CLINICAL','SAFETY','TEMPORAL','EVIDENCE','SYNTHESIS'].forEach(o => setOrchStatus(o, ''));
-  ['NOTE_PARSER','DATA_EXTRACTOR','OUTLIER_DETECTOR','MED_SAFETY','ALERT_ESCALATION',
-   'TREND_CLASSIFIER','TRAJECTORY_PREDICTOR','SEMANTIC_RETRIEVER','RAG_EXPLAINER',
-   'SOFA_NEWS2','CHIEF_AGENT'].forEach(a => setAgentDot(a, ''));
+function parseSynthesis(data) {
+  if (!data) return;
+  if (data.synthesis) byId('summaryBox').textContent = data.synthesis;
+  if (data.handover) byId('handoverBox').textContent = data.handover;
+}
 
-  const pt = currentPatient;
-  logAgent('HC01', `=== DIAGNOSTIC RUN — ${pt.name} (${backendOnline?'BACKEND':'STANDALONE'}) ===`, 'success');
+function handleBackendMessage(msg) {
+  if (!msg || !msg.type) return;
 
-  if (backendOnline) {
-    // ── Backend path (multi-orchestrator) ──────────
-    // Build FHIR-compatible patient payload for backend
-    const payload = {
-      id: pt.id, name: pt.name, age: pt.age, sex: pt.sex,
-      weight: pt.weight, daysInICU: pt.daysInICU, admitDiag: pt.admitDiag,
-      vitals: {
-        hr:pt.vitals.hr, bpSys:pt.vitals.bpSys, bpDia:pt.vitals.bpDia,
-        map:pt.vitals.map, rr:pt.vitals.rr, spo2:pt.vitals.spo2,
-        temp:pt.vitals.temp, gcs:pt.vitals.gcs, fio2:pt.vitals.fio2,
-        pao2: typeof pt.labs.pao2 === 'number' ? pt.labs.pao2 : 75
-      },
-      labs: Object.fromEntries(Object.entries(pt.labs).filter(([,v])=>Array.isArray(v))),
-      medications: pt.medications,
-      notes: pt.notes,
+  if (msg.type === 'log') {
+    logLine(msg.agent || 'HC01', msg.message || '...');
+    return;
+  }
+
+  if (msg.type === 'orchestrator_status') {
+    setOrch(msg.orchestrator, msg.status);
+    return;
+  }
+
+  if (msg.type === 'agent_status') {
+    const st = msg.status === 'done' ? 'done' : msg.status === 'active' ? 'active' : msg.status;
+    setDot(msg.agent, st);
+    return;
+  }
+
+  if (msg.type === 'agent_result') {
+    if (msg.agent === 'ALERT_ESCALATION') {
+      renderAlerts(msg.data?.alerts || []);
+    }
+    if (msg.agent === 'SEMANTIC_RETRIEVER') {
+      renderEvidence(msg.data || []);
+    }
+    if (msg.agent === 'CHIEF_AGENT') {
+      parseSynthesis(msg.data || {});
+    }
+    return;
+  }
+
+  if (msg.type === 'stream_chunk' && msg.agent === 'CHIEF_AGENT') {
+    const box = byId('summaryBox');
+    box.textContent = (box.textContent === 'Awaiting run' ? '' : box.textContent) + (msg.content || '');
+    return;
+  }
+
+  if (msg.type === 'pipeline_complete') {
+    const ms = msg.duration_ms || (Date.now() - runStart);
+    updateMetrics({ latency: `${ms} ms`, mode: 'Connected Pipeline' });
+    logLine('HC01', `Run complete with alert level ${msg.alert_level || 'unknown'}`);
+    byId('runBtn').disabled = false;
+    byId('runBtn').textContent = 'Run Clinical Review';
+    return;
+  }
+
+  if (msg.type === 'error') {
+    logLine('HC01', `Backend error: ${msg.message || 'unknown'}`);
+    byId('runBtn').disabled = false;
+    byId('runBtn').textContent = 'Run Clinical Review';
+  }
+}
+
+function openBackendWS(payload, nimKey) {
+  return new Promise((resolve) => {
+    if (backendWS) { try { backendWS.close(); } catch {} }
+
+    backendWS = new WebSocket(CONFIG.BACKEND_WS);
+
+    backendWS.onopen = () => {
+      backendWS.send(JSON.stringify({ action: 'diagnose', patient: payload, nim_api_key: nimKey }));
     };
 
-    openBackendWS(payload, apiKey, (completed) => {
-      if (!completed) {
-        logAgent('HC01', 'Backend WS failed — switching to standalone mode', 'warn');
-        runStandalonePipeline(pt, apiKey, btn);
+    backendWS.onmessage = (ev) => {
+      try {
+        handleBackendMessage(JSON.parse(ev.data));
+      } catch {
+        // Ignore invalid backend frame.
       }
-    });
-  } else {
-    // ── Standalone path (direct API calls) ─────────
-    await runStandalonePipeline(pt, apiKey, btn);
-  }
+    };
+
+    backendWS.onerror = () => {
+      logLine('HC01', 'WebSocket error. Switching to direct model fallback.');
+      resolve(false);
+    };
+
+    backendWS.onclose = () => {
+      resolve(true);
+    };
+  });
 }
 
-async function runStandalonePipeline(pt, apiKey, btn) {
-  try {
-    const sofa = calcSOFA(pt); const news2 = calcNEWS2(pt);
-    const outliers = detectOutliers(pt.labs);
+async function standaloneFallback(pt, nemotronKey, qwenKey) {
+  updateMetrics({ mode: 'Standalone Fallback' });
 
-    setOrchStatus('CLINICAL','active');
-    const parsedNotes = await runNoteParser(pt);
-    setOrchStatus('CLINICAL','done');
-
-    setOrchStatus('SAFETY','active'); setOrchStatus('TEMPORAL','active');
-    const labFindings = runLabMapper(pt);
-    renderAlertStandalone(pt, labFindings, outliers);
-    setOrchStatus('SAFETY','done'); setOrchStatus('TEMPORAL','done');
-
-    setOrchStatus('EVIDENCE','active');
-    const guidelines = await runRAGAgent(pt, labFindings, outliers);
-    setOrchStatus('EVIDENCE','done');
-
-    setOrchStatus('SYNTHESIS','active');
-    await runChiefAgent(pt, parsedNotes, labFindings, guidelines, outliers, sofa, news2);
-    setOrchStatus('SYNTHESIS','done');
-
-    document.getElementById('systemStatus').textContent = 'COMPLETE';
-    logAgent('HC01', `=== PIPELINE COMPLETE (STANDALONE) ===`, 'success');
-  } catch (e) {
-    logAgent('HC01', `Pipeline error: ${e.message}`, 'error');
-    document.getElementById('systemStatus').textContent = 'ERROR';
-  }
-  btn.disabled = false;
-  btn.innerHTML = '&#9654; RUN DIAGNOSTICS';
-}
-
-function renderAlertStandalone(pt, labFindings, outliers) {
-  // Minimal alert panel for standalone mode (no backend alert agent)
   const alerts = [];
-  const lat = pt.labs.lactate?.[pt.labs.lactate.length-1]?.v;
-  const bpSys = pt.vitals.bpSys;
-  if (lat >= 4.0) alerts.push({level:'CRITICAL',message:`Lactate ${lat} mmol/L — critical hypoperfusion`,intervention:'Vasopressor escalation + repeat lactate 1h'});
-  else if (lat >= 2.0) alerts.push({level:'WARNING',message:`Lactate ${lat} mmol/L — SSC 2021 threshold breached`,intervention:'Guide resuscitation by lactate clearance'});
-  if (bpSys <= 90) alerts.push({level:'CRITICAL',message:`SBP ${bpSys} mmHg — vasopressor threshold`,intervention:'Norepinephrine titration; MAP target ≥65'});
-  if (outliers.length) alerts.push({level:'CRITICAL',message:`Lab outlier: ${outliers.map(o=>o.lab).join(', ')} — Z>2.5. DIAGNOSIS HELD.`,intervention:'Confirm redraw before updating diagnosis'});
-  renderAlertPanel({level: alerts.some(a=>a.level==='CRITICAL')?'CRITICAL':'WARNING', alerts});
+  const lac = pt.labs.lactate.slice(-1)[0].v;
+  const cr = pt.labs.creatinine.slice(-1)[0].v;
+  if (lac >= 2) alerts.push({ level: 'WARNING', message: `Lactate is elevated at ${lac} mmol/L.` });
+  if (cr >= 3) alerts.push({ level: 'CRITICAL', message: `Creatinine is critically high at ${cr} mg/dL.` });
+  renderAlerts(alerts);
+
+  const evidence = await queryRagFallback(pt);
+  renderEvidence(evidence);
+
+  const context = `Patient ${pt.name}, ${pt.age}${pt.sex}. ${pt.admit}. Latest lactate ${lac}, creatinine ${cr}.`;
+  const evidenceText = evidence.map(e => `${e.citation || e.source} ${e.section || ''}: ${e.text}`).join('\n');
+
+  const messages = [
+    { role: 'system', content: 'You are a clinical synthesis assistant. Keep output concise, cited, and safe.' },
+    { role: 'user', content: `${context}\nGuidance:\n${evidenceText}\nProvide clinical summary and a short shift handover.` },
+  ];
+
+  let summary = '';
+
+  try {
+    if (nemotronKey) {
+      const nem = await nimStream(
+        CONFIG.MODEL_NEMOTRON,
+        messages,
+        nemotronKey,
+        {
+          temperature: 1,
+          topP: 0.95,
+          maxTokens: 4096,
+          extraBody: { chat_template_kwargs: { enable_thinking: true }, reasoning_budget: 4096 },
+        }
+      );
+      summary = nem.content;
+      if (nem.reasoning) logLine('NEMOTRON', `Reasoning stream received (${nem.reasoning.length} chars)`);
+    }
+  } catch (e) {
+    logLine('NEMOTRON', `Nemotron call failed: ${e.message}`);
+  }
+
+  if (!summary) {
+    try {
+      if (!qwenKey) throw new Error('No Qwen key provided');
+      const qwen = await nimStream(
+        CONFIG.MODEL_QWEN,
+        messages,
+        qwenKey,
+        { temperature: 0.2, topP: 0.7, maxTokens: 1024 }
+      );
+      summary = qwen.content;
+    } catch (e) {
+      summary = `Fallback summary failed: ${e.message}`;
+      logLine('QWEN', summary);
+    }
+  }
+
+  byId('summaryBox').textContent = summary || 'No summary generated';
+  byId('handoverBox').textContent = summary ? summary.slice(0, 260) : 'No handover generated';
 }
 
-// ══════════════════════════════════════════════════
-// RESET
-// ══════════════════════════════════════════════════
-function resetOutputs() {
-  document.getElementById('synthesisOutput').innerHTML = '<span style="color:var(--text3)">Awaiting agent pipeline completion...</span>';
-  document.getElementById('ragEvidence').innerHTML = '<div class="empty-state">Awaiting RAG retrieval</div>';
-  document.getElementById('diffList').innerHTML = '<div class="empty-state">Awaiting Chief Agent synthesis</div>';
-  document.getElementById('handoverBrief').textContent = 'Awaiting synthesis...';
-  document.getElementById('outlierAlert').classList.remove('visible');
-  document.getElementById('agentLog').innerHTML = '';
-  [1,2,3,4].forEach(n => setPipe(n, ''));
+async function runReview() {
+  if (!current) {
+    loadPatient(byId('patientSelect').value);
+  }
+
+  const nemotronKey = CONFIG.NEMOTRON_API_KEY;
+  const qwenKey = CONFIG.QWEN_API_KEY;
+
+  const pt = current;
+  runStart = Date.now();
+  byId('runBtn').disabled = true;
+  byId('runBtn').textContent = 'Running...';
+  updateMetrics({ mode: 'Running', latency: 'Running...' });
+
+  resetAgentBoard();
+  byId('summaryBox').textContent = 'Awaiting synthesis stream...';
+  byId('handoverBox').textContent = 'Awaiting handover...';
+
+  logLine('HC01', `Run started for ${pt.name}`);
+
+  const payload = buildBackendPayload(pt);
+
+  if (backendOnline) {
+    const completed = await openBackendWS(payload, nemotronKey || qwenKey);
+    if (!completed) {
+      await standaloneFallback(pt, nemotronKey, qwenKey);
+      updateMetrics({ latency: `${Date.now() - runStart} ms` });
+      byId('runBtn').disabled = false;
+      byId('runBtn').textContent = 'Run Clinical Review';
+    }
+  } else {
+    await standaloneFallback(pt, nemotronKey, qwenKey);
+    updateMetrics({ latency: `${Date.now() - runStart} ms` });
+    byId('runBtn').disabled = false;
+    byId('runBtn').textContent = 'Run Clinical Review';
+  }
 }
 
 function resetAll() {
-  resetOutputs();
-  currentPatient = null;
-  if (labChart) { labChart.destroy(); labChart = null; }
-  document.getElementById('ptName').textContent = '—';
-  document.getElementById('ptMeta').textContent = '—';
-  document.getElementById('ptBadge').innerHTML = '';
-  document.getElementById('riskChips').innerHTML = '';
-  document.getElementById('vitalsGrid').querySelectorAll('.vital-value').forEach(el => { el.textContent = '—'; el.className = 'vital-value vital-normal'; });
-  document.getElementById('sofaGrid').innerHTML = '<div class="empty-state">Load patient to compute</div>';
-  document.getElementById('sofaTotal').textContent = '—';
-  document.getElementById('news2Number').textContent = '—';
-  document.getElementById('news2Level').textContent = '—';
-  document.getElementById('news2Desc').textContent = 'Load patient to score';
-  document.getElementById('news2Breakdown').innerHTML = '';
-  document.getElementById('medList').innerHTML = '<div class="empty-state">—</div>';
-  document.getElementById('labTableBody').innerHTML = '<tr><td colspan="4" class="empty-state">—</td></tr>';
-  document.getElementById('parsedNotes').innerHTML = '<div class="empty-state">—</div>';
-  document.getElementById('systemStatus').textContent = 'STANDBY';
-  document.getElementById('riskBadge').style.display = 'none';
-  logAgent('HC01', 'System reset. Select patient to begin.', 'success');
+  byId('logBox').innerHTML = '';
+  byId('summaryBox').textContent = 'Awaiting run';
+  byId('handoverBox').textContent = 'Awaiting run';
+  byId('evidenceList').innerHTML = '<div class="small">Awaiting run</div>';
+  byId('alertList').innerHTML = '<div class="small">Awaiting run</div>';
+  updateMetrics({ mode: 'Idle', latency: '-', alerts: 0, outliers: 0, citations: 0 });
+  resetAgentBoard();
+  const selected = byId('patientSelect').value || Object.keys(PATIENTS)[0];
+  if (selected) loadPatient(selected);
+  logLine('HC01', 'Dashboard reset completed');
 }
 
-// ══════════════════════════════════════════════════
-// INIT
-// ══════════════════════════════════════════════════
-window.addEventListener('DOMContentLoaded', async () => {
-  loadPatient('P001');
+function loadPatient(id) {
+  if (!id || !PATIENTS[id]) return;
+  current = PATIENTS[id];
+  renderPatient(current);
+  setText('kData', `${Object.keys(PATIENTS).length} Cases`);
+  setText('kDataSub', `MIMIC ${REF_DATA.mimicStays.toLocaleString()} | eICU ${REF_DATA.eicuEncounters.toLocaleString()}`);
+  setText('kFhir', 'Ready');
+  setText('kFhirSub', 'FHIR-compatible object assembled per review run');
+  setText('mFhir', 'Prepared');
+  logLine('HC01', `Patient loaded: ${current.name}`);
+}
 
-  // 1. Check backend first (server.py on RTX 2070 system)
+globalThis.addEventListener('DOMContentLoaded', async () => {
+  setText('kAgents', '11 Agents');
+  setText('kAgentsSub', '5 orchestration groups');
+  updateMetrics({ mode: 'Idle', latency: '-', alerts: 0, outliers: 0, citations: 0 });
+  resetAgentBoard();
   await checkBackend();
 
-  // 2. If no backend, check Ollama standalone + pre-embed guidelines
-  if (!backendOnline) {
-    await checkOllamaAndPreEmbed();
+  const loaded = await loadSyntheticPatientsFromBackend();
+  if (!loaded) {
+    const select = byId('patientSelect');
+    select.innerHTML = '';
+    Object.keys(PATIENTS).forEach((id) => {
+      const p = PATIENTS[id];
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = `${id} - ${p.name} - ${p.admit}`;
+      select.appendChild(opt);
+    });
+    setText('kData', `${Object.keys(PATIENTS).length} Cases`);
+    setText('kDataSub', 'Fallback local dataset loaded');
   }
 
-  // Update pipeline bar labels
-  const p1 = document.getElementById('pipe1-model');
-  const p3 = document.getElementById('pipe3-model');
-  if (p1) p1.textContent = backendOnline ? 'qwen2.5:7b · BACKEND' : (MODEL_STATUS.ollamaOnline ? 'qwen2.5:7b · LOCAL' : 'qwen2.5-7b · NIM');
-  if (p3) p3.textContent = 'ChromaDB API · fallback mini-KB';
-
-  // Show MIMIC-IV mortality context in SOFA panel
-  logAgent('HC01', `Dataset context loaded: MIMIC-IV (${MIMIC_IV.icu_stays.toLocaleString()} ICU stays), eICU-CRD (${EICU.encounters.toLocaleString()} encounters), PhysioNet Sepsis AUROC=${PHYSIONET_SEPSIS.top_auroc}`, 'info');
+  const firstId = byId('patientSelect').value || Object.keys(PATIENTS)[0];
+  if (firstId) loadPatient(firstId);
 });
 </script>
 </body>

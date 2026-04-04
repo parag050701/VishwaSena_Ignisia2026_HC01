@@ -134,6 +134,9 @@ class AgentContext:
         self.timeline_str: str = ""              # human-readable timeline
         self.retrieved_guidelines: List[Dict] = []
         self.rag_explanation: str = ""
+        self.family_communication: Dict[str, Any] = {}
+        self.diagnosis_hold: bool = False
+        self.hold_reasons: List[str] = []
         self.sofa: Optional[Dict] = None
         self.news2: Optional[Dict] = None
         self.synthesis: str = ""

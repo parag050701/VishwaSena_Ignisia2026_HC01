@@ -540,7 +540,7 @@
     {
       "id": "P004",
       "subject_id": "HC01-P004",
-      "name": "Ms. Elena Diallo",
+      "name": "Ms. Elena Vasquez",
       "age": 84,
       "sex": "M",
       "weight": 75.4,
@@ -727,7 +727,7 @@
         {
           "time": "Mid-shift",
           "author": "Respiratory Therapy",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Elena Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Elena Vasquez."
         },
         {
           "time": "Latest",
@@ -750,7 +750,7 @@
     {
       "id": "P005",
       "subject_id": "HC01-P005",
-      "name": "Mr. Kofi Diallo",
+      "name": "Mr. Kofi Mensah",
       "age": 51,
       "sex": "F",
       "weight": 64.6,
@@ -936,7 +936,7 @@
         {
           "time": "Mid-shift",
           "author": "Dr. R. Martinez (Evening)",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Kofi Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Kofi Mensah."
         },
         {
           "time": "Latest",
@@ -959,7 +959,7 @@
     {
       "id": "P006",
       "subject_id": "HC01-P006",
-      "name": "Ms. Sara Diallo",
+      "name": "Ms. Sara Al-Rashid",
       "age": 66,
       "sex": "M",
       "weight": 71.6,
@@ -1145,7 +1145,7 @@
         {
           "time": "Mid-shift",
           "author": "Dr. A. Patel (Surgical ICU)",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Sara Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Sara Al-Rashid."
         },
         {
           "time": "Latest",
@@ -1168,7 +1168,7 @@
     {
       "id": "P007",
       "subject_id": "HC01-P007",
-      "name": "Mr. Omar Diallo",
+      "name": "Mr. Omar Hassan",
       "age": 79,
       "sex": "F",
       "weight": 64.0,
@@ -1355,7 +1355,7 @@
         {
           "time": "Mid-shift",
           "author": "Nephrology Consult",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Omar Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Omar Hassan."
         },
         {
           "time": "Latest",
@@ -1378,7 +1378,7 @@
     {
       "id": "P008",
       "subject_id": "HC01-P008",
-      "name": "Ms. Lina Diallo",
+      "name": "Ms. Lina Nakamura",
       "age": 46,
       "sex": "M",
       "weight": 71.4,
@@ -1564,7 +1564,7 @@
         {
           "time": "Mid-shift",
           "author": "Nurse Night Shift",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Lina Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Lina Nakamura."
         },
         {
           "time": "Latest",
@@ -1587,7 +1587,7 @@
     {
       "id": "P009",
       "subject_id": "HC01-P009",
-      "name": "Mr. Iris Diallo",
+      "name": "Mr. Iris Kimura",
       "age": 75,
       "sex": "M",
       "weight": 56.3,
@@ -1773,7 +1773,7 @@
         {
           "time": "Mid-shift",
           "author": "Nurse Night Shift",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Iris Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Iris Kimura."
         },
         {
           "time": "Latest",
@@ -1796,7 +1796,7 @@
     {
       "id": "P010",
       "subject_id": "HC01-P010",
-      "name": "Ms. Mateo Diallo",
+      "name": "Ms. Mateo Fernandez",
       "age": 84,
       "sex": "F",
       "weight": 86.4,
@@ -1982,7 +1982,7 @@
         {
           "time": "Mid-shift",
           "author": "Respiratory Therapy",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Mateo Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Mateo Fernandez."
         },
         {
           "time": "Latest",
@@ -2005,7 +2005,7 @@
     {
       "id": "P011",
       "subject_id": "HC01-P011",
-      "name": "Mr. Zuri Diallo",
+      "name": "Mr. Zuri Abebe",
       "age": 69,
       "sex": "M",
       "weight": 63.0,
@@ -2192,7 +2192,7 @@
         {
           "time": "Mid-shift",
           "author": "Nurse Night Shift",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Zuri Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Zuri Abebe."
         },
         {
           "time": "Latest",
@@ -2215,7 +2215,7 @@
     {
       "id": "P012",
       "subject_id": "HC01-P012",
-      "name": "Ms. Arjun Diallo",
+      "name": "Ms. Arjun Mehta",
       "age": 60,
       "sex": "F",
       "weight": 53.8,
@@ -2402,7 +2402,7 @@
         {
           "time": "Mid-shift",
           "author": "Nurse Day Shift",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Arjun Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Arjun Mehta."
         },
         {
           "time": "Latest",
@@ -2425,7 +2425,7 @@
     {
       "id": "P013",
       "subject_id": "HC01-P013",
-      "name": "Mr. Nadia Diallo",
+      "name": "Mr. Nadia Petrova",
       "age": 59,
       "sex": "F",
       "weight": 102.5,
@@ -2611,7 +2611,7 @@
         {
           "time": "Mid-shift",
           "author": "Nurse Night Shift",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Nadia Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Nadia Petrova."
         },
         {
           "time": "Latest",
@@ -2634,7 +2634,7 @@
     {
       "id": "P014",
       "subject_id": "HC01-P014",
-      "name": "Ms. Leo Diallo",
+      "name": "Ms. Leo Marchetti",
       "age": 54,
       "sex": "M",
       "weight": 75.8,
@@ -2820,7 +2820,7 @@
         {
           "time": "Mid-shift",
           "author": "Resident Team",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Leo Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Leo Marchetti."
         },
         {
           "time": "Latest",
@@ -2843,7 +2843,7 @@
     {
       "id": "P015",
       "subject_id": "HC01-P015",
-      "name": "Mr. Priya Diallo",
+      "name": "Mr. Priya Krishnan",
       "age": 56,
       "sex": "M",
       "weight": 102.0,
@@ -3029,7 +3029,7 @@
         {
           "time": "Mid-shift",
           "author": "Nurse Day Shift",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Priya Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Priya Krishnan."
         },
         {
           "time": "Latest",
@@ -3052,7 +3052,7 @@
     {
       "id": "P016",
       "subject_id": "HC01-P016",
-      "name": "Ms. Kenji Diallo",
+      "name": "Ms. Kenji Tanaka",
       "age": 71,
       "sex": "M",
       "weight": 70.9,
@@ -3238,7 +3238,7 @@
         {
           "time": "Mid-shift",
           "author": "Resident Team",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Kenji Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Kenji Tanaka."
         },
         {
           "time": "Latest",
@@ -3261,7 +3261,7 @@
     {
       "id": "P017",
       "subject_id": "HC01-P017",
-      "name": "Mr. Hana Diallo",
+      "name": "Mr. Hana Park",
       "age": 81,
       "sex": "F",
       "weight": 61.7,
@@ -3449,7 +3449,7 @@
         {
           "time": "Mid-shift",
           "author": "Dr. R. Martinez (Evening)",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Hana Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Hana Park."
         },
         {
           "time": "Latest",
@@ -3472,7 +3472,7 @@
     {
       "id": "P018",
       "subject_id": "HC01-P018",
-      "name": "Ms. Imani Diallo",
+      "name": "Ms. Imani Osei",
       "age": 74,
       "sex": "F",
       "weight": 64.5,
@@ -3658,7 +3658,7 @@
         {
           "time": "Mid-shift",
           "author": "Dr. R. Martinez (Evening)",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Imani Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Imani Osei."
         },
         {
           "time": "Latest",
@@ -3681,7 +3681,7 @@
     {
       "id": "P019",
       "subject_id": "HC01-P019",
-      "name": "Mr. Jonah Diallo",
+      "name": "Mr. Jonah Andersen",
       "age": 57,
       "sex": "M",
       "weight": 72.9,
@@ -3867,7 +3867,7 @@
         {
           "time": "Mid-shift",
           "author": "ICU Fellow",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Jonah Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Jonah Andersen."
         },
         {
           "time": "Latest",
@@ -3890,7 +3890,7 @@
     {
       "id": "P020",
       "subject_id": "HC01-P020",
-      "name": "Ms. Fatima Diallo",
+      "name": "Ms. Fatima Al-Amin",
       "age": 85,
       "sex": "F",
       "weight": 97.1,
@@ -4077,7 +4077,7 @@
         {
           "time": "Mid-shift",
           "author": "Nephrology Consult",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Fatima Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Fatima Al-Amin."
         },
         {
           "time": "Latest",
@@ -4100,7 +4100,7 @@
     {
       "id": "P021",
       "subject_id": "HC01-P021",
-      "name": "Mr. Avery Diallo",
+      "name": "Mr. Avery Thompson",
       "age": 84,
       "sex": "F",
       "weight": 52.7,
@@ -4287,7 +4287,7 @@
         {
           "time": "Mid-shift",
           "author": "Nurse Night Shift",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Avery Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Mr. Avery Thompson."
         },
         {
           "time": "Latest",
@@ -4310,7 +4310,7 @@
     {
       "id": "P022",
       "subject_id": "HC01-P022",
-      "name": "Ms. Sofia Diallo",
+      "name": "Ms. Sofia Rossi",
       "age": 75,
       "sex": "M",
       "weight": 90.4,
@@ -4497,7 +4497,7 @@
         {
           "time": "Mid-shift",
           "author": "Dr. S. Sharma (Attending)",
-          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Sofia Diallo."
+          "text": "Mentation is worse. Perfusion remains borderline despite fluids. Repeat lactate and cultures pending. Name in record: Ms. Sofia Rossi."
         },
         {
           "time": "Latest",
@@ -4520,7 +4520,7 @@
     {
       "id": "P023",
       "subject_id": "HC01-P023",
-      "name": "Mr. Daniel Diallo",
+      "name": "Mr. Daniel Kowalski",
       "age": 56,
       "sex": "F",
       "weight": 101.2,
@@ -4693,7 +4693,7 @@
         {
           "time": "Mid-shift",
           "author": "ICU Fellow",
-          "text": "Patient required escalation to ventilatory support. SpO2 remains low despite higher FiO2. Name in record: Mr. Daniel Diallo."
+          "text": "Patient required escalation to ventilatory support. SpO2 remains low despite higher FiO2. Name in record: Mr. Daniel Kowalski."
         },
         {
           "time": "Latest",
@@ -4716,7 +4716,7 @@
     {
       "id": "P024",
       "subject_id": "HC01-P024",
-      "name": "Ms. Mei Diallo",
+      "name": "Ms. Mei Zhang",
       "age": 51,
       "sex": "M",
       "weight": 62.6,
@@ -4889,7 +4889,7 @@
         {
           "time": "Mid-shift",
           "author": "ICU Fellow",
-          "text": "Patient required escalation to ventilatory support. SpO2 remains low despite higher FiO2. Name in record: Ms. Mei Diallo."
+          "text": "Patient required escalation to ventilatory support. SpO2 remains low despite higher FiO2. Name in record: Ms. Mei Zhang."
         },
         {
           "time": "Latest",

@@ -1037,6 +1037,13 @@ let state = {
   synthesisAccum: '',
   labCharts: {},
   currentView: 'patient',
+  priorityQueue: [],
+  // Diagnostic results for current patient (filled after pipeline runs)
+  lastDiag: {
+    sofa: null, news2: null, alertLevel: null,
+    outliers: [], medConflicts: [], alerts: [],
+    synthesis: '', handover: '', trajectory: {},
+  },
 };
 
 // ── INIT ─────────────────────────────────────────────
@@ -1420,6 +1427,9 @@ function handleWSMessage(msg) {
     case 'pipeline_complete':
       setPipe(5, 'done'); setPipe(6, 'done');
       updateTopBarScores(msg.sofa_total, msg.news2_total, msg.alert_level);
+      state.lastDiag.sofa = msg.sofa_total;
+      state.lastDiag.news2 = msg.news2_total;
+      state.lastDiag.alertLevel = msg.alert_level;
       pipelineDone();
       break;
 
@@ -1433,15 +1443,18 @@ function handleAgentResult(agent, data) {
   switch (agent) {
     case 'OUTLIER_DETECTOR':
       renderOutliers(data);
+      state.lastDiag.outliers = data || [];
       break;
     case 'MED_SAFETY':
       if (data && data.length) renderMedsWithConflicts(data);
+      state.lastDiag.medConflicts = (data || []).filter(c => c.conflict);
       const mConflicts = (data || []).filter(c => c.status === 'conflict').length;
       updateStatCard('scMeds', mConflicts, mConflicts ? 'crit' : 'good',
         `${mConflicts ? mConflicts + ' conflict' + (mConflicts>1?'s':'') : 'No conflicts'}`);
       break;
     case 'ALERT_ESCALATION':
       renderAlerts(data);
+      state.lastDiag.alerts = data?.alerts || []; if (data?.level) state.lastDiag.alertLevel = data.level;
       if (data) updateStatCard('scAlerts', (data.alerts||[]).length,
         data.level === 'CRITICAL' ? 'crit' : data.level === 'WARNING' ? 'warn' : 'good',
         data.level || 'No alerts');
@@ -1456,6 +1469,7 @@ function handleAgentResult(agent, data) {
       if (data) {
         const s = data.sofa, n = data.news2;
         if (s) {
+          state.lastDiag.sofa = s.total;
           renderSofaBreakdown(s);
           updateTopBarScores(s.total, n?.total, null);
           updateStatCard('scSofa', s.total,
@@ -1463,6 +1477,7 @@ function handleAgentResult(agent, data) {
             `~${SOFA_MORTALITY[Math.min(s.total,15)] || '?'}% predicted mortality`);
         }
         if (n) {
+          state.lastDiag.news2 = n.total;
           updateStatCard('scNews2', n.total,
             n.level === 'HIGH' ? 'crit' : n.level === 'MEDIUM' ? 'warn' : 'good',
             n.level ? n.level + ' risk' : '');
@@ -1477,8 +1492,10 @@ function handleAgentResult(agent, data) {
       break;
     case 'CHIEF_AGENT':
       if (data && data.synthesis) {
+        state.lastDiag.synthesis = data.synthesis;
+        state.lastDiag.handover  = data.handover || '';
         finalizeSynthesis(data.synthesis);
-        renderAICard(data.synthesis, data.alert_level);
+        renderAICard(data.synthesis, data.alert_level || state.lastDiag.alertLevel);
         if (data.handover) showHandover(data.handover);
       }
       break;
@@ -1969,15 +1986,30 @@ async function analyzeFromWard(fhirId) {
 
 // ── VOICE ────────────────────────────────────────────
 async function speakSynthesis() {
-  // Prefer synthesisAccum (full report), fallback to current AI card text
-  const text = state.synthesisAccum || document.getElementById('aiSub')?.textContent || '';
-  if (!text.trim()) return;
+  // ICU-optimised: speak only the handover brief + top alert (≤2 sentences, ≤400 chars)
+  let ttsText = '';
+  if (state.lastDiag.handover) {
+    // Extract first 2 sentences from handover brief
+    const sentences = state.lastDiag.handover.match(/[^.!?]+[.!?]+/g) || [];
+    ttsText = sentences.slice(0, 2).join(' ').trim();
+  }
+  // Append top alert if it adds new info
+  const topAlert = state.lastDiag.alerts?.[0]?.message || '';
+  if (topAlert && !ttsText.toLowerCase().includes(topAlert.toLowerCase().substring(0, 20))) {
+    ttsText += (ttsText ? '. ' : '') + topAlert;
+  }
+  // Final fallback: first sentence of AI card
+  if (!ttsText) {
+    const cardText = document.getElementById('aiSub')?.textContent || '';
+    ttsText = (cardText.match(/[^.!?]+[.!?]+/) || [cardText])[0].trim();
+  }
+  if (!ttsText.trim()) return;
   const btn = document.getElementById('speakBtn') || document.querySelector('.btn-speak');
   if (btn) { btn.textContent = '🔊 Speaking…'; btn.disabled = true; }
   try {
     const r = await fetch(`${API}/api/voice/synthesize`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ text: text.substring(0, 1200) })
+      body: JSON.stringify({ text: ttsText.substring(0, 400) })
     });
     const d = await r.json();
     if (!d.available || !d.audio_b64) {
@@ -2104,11 +2136,23 @@ async function sendAsstQuery() {
   const thinkEl = asstAddMsg('⏳ Analyzing ward data…', 'asst-bot');
 
   try {
+    // Build diagnostics context to pass when a patient is loaded
+    const diagContext = (state.lastDiag && (state.lastDiag.sofa || state.lastDiag.handover)) ? {
+      sofa:         state.lastDiag.sofa,
+      news2:        state.lastDiag.news2,
+      alertLevel:   state.lastDiag.alertLevel,
+      handover:     state.lastDiag.handover,
+      trajectory:   state.lastDiag.trajectory,
+      outliers:     state.lastDiag.outliers,
+      medConflicts: state.lastDiag.medConflicts,
+      alerts:       state.lastDiag.alerts,
+    } : null;
     const r = await fetch(`${API}/api/assistant/query`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         query: q,
-        context_patient: state.currentPatient?._fhirId || state.currentPatient?.id || null
+        context_patient: state.currentPatient?._fhirId || state.currentPatient?.id || null,
+        current_diagnostics: diagContext,
       })
     });
     const d = await r.json();

@@ -695,6 +695,7 @@ async def priority_queue() -> List[Dict[str, Any]]:
 class AssistantQueryRequest(BaseModel):
     query: str
     context_patient: Optional[str] = None   # fhir_id of currently viewed patient
+    current_diagnostics: Optional[Dict] = None  # live diagnostic results from frontend
 
 class AssistantQueryResponse(BaseModel):
     intent:      str
@@ -748,10 +749,46 @@ async def assistant_query(req: AssistantQueryRequest) -> AssistantQueryResponse:
         for i, r in enumerate(ranked_snap[:20])
     )
 
+    # Build current-patient diagnostic context block if available
+    diag_block = ""
+    if req.current_diagnostics and req.context_patient:
+        d = req.current_diagnostics
+        parts = []
+        if d.get("sofa"):
+            parts.append(f"SOFA {d['sofa'].get('total', '?')} (Resp {d['sofa'].get('resp','?')}, "
+                         f"Coag {d['sofa'].get('coag','?')}, Liver {d['sofa'].get('liver','?')}, "
+                         f"CV {d['sofa'].get('cv','?')}, CNS {d['sofa'].get('cns','?')}, "
+                         f"Renal {d['sofa'].get('renal','?')})")
+        if d.get("news2"):
+            parts.append(f"NEWS2 {d['news2'].get('total','?')} ({d['news2'].get('level','?')})")
+        if d.get("alertLevel"):
+            parts.append(f"Alert: {d['alertLevel']}")
+        if d.get("trajectory"):
+            parts.append(f"Trajectory: {d['trajectory']}")
+        if d.get("handover"):
+            parts.append(f"Handover brief: {d['handover'][:300]}")
+        if d.get("outliers"):
+            outlier_strs = [f"{o.get('name','?')} {o.get('value','?')} ({o.get('severity','?')})"
+                            for o in (d['outliers'] if isinstance(d['outliers'], list) else [])[:5]]
+            if outlier_strs:
+                parts.append(f"Lab outliers: {', '.join(outlier_strs)}")
+        if d.get("medConflicts"):
+            med_strs = [f"{mc.get('drug','?')}: {mc.get('issue','?')}"
+                        for mc in (d['medConflicts'] if isinstance(d['medConflicts'], list) else [])[:3]]
+            if med_strs:
+                parts.append(f"Med alerts: {'; '.join(med_strs)}")
+        if d.get("alerts"):
+            alert_strs = [a.get('message','') for a in (d['alerts'] if isinstance(d['alerts'], list) else [])[:3]]
+            if alert_strs:
+                parts.append(f"Clinical alerts: {'; '.join(alert_strs)}")
+        if parts:
+            diag_block = f"\n\nCurrent patient diagnostics ({req.context_patient}):\n" + "\n".join(f"  - {p}" for p in parts)
+
     messages = [
         {"role": "system", "content": (
             "You are HC01 Ward Assistant — a clinical triage AI. "
-            "Answer the clinician's query concisely using the ward snapshot below. "
+            "Answer the clinician's query concisely using the ward snapshot and any current patient diagnostics provided. "
+            "When asked about a specific patient's diagnostics, vitals, or clinical status, use the current patient diagnostics block. "
             "Respond ONLY with a JSON object: "
             '{"intent":"<load_patient|show_priority|answer_question|run_diagnostics>", '
             '"answer":"<plain English answer, max 3 sentences>", '
@@ -761,7 +798,8 @@ async def assistant_query(req: AssistantQueryRequest) -> AssistantQueryResponse:
             " No preamble."
         )},
         {"role": "user", "content":
-            f"Ward snapshot (SOFA-ranked):\n{snap_str}\n\n"
+            f"Ward snapshot (SOFA-ranked):\n{snap_str}"
+            f"{diag_block}\n\n"
             f"Currently viewing: {req.context_patient or 'none'}\n\n"
             f"Query: {req.query}"
         },

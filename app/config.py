@@ -59,6 +59,12 @@ class Config:
     TTS_DEVICE: str = os.getenv("TTS_DEVICE", "cuda")
     TTS_SAMPLE_RATE: int = 24000
 
+    # NIM Speech API keys
+    NIM_STT_API_KEY: str = os.getenv("NIM_STT_API_KEY", "")
+    NIM_TTS_API_KEY: str = os.getenv("NIM_TTS_API_KEY", "")
+    NIM_TTS_VOICE: str = os.getenv("NIM_TTS_VOICE", "Magpie-Multilingual.EN-US.Aria")
+    NIM_SPEECH_BASE: str = "https://integrate.api.nvidia.com/v1"
+
     # ═══════════════════════════════════════════════════════════
     # EHR / FHIR
     # ═══════════════════════════════════════════════════════════

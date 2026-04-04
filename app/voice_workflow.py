@@ -24,13 +24,14 @@ from .config import cfg
 log = logging.getLogger("HC01.voice")
 
 
-# ─── STT: faster-whisper with lazy loading ───────────────────────────────────
+# ─── STT: NIM Whisper Large v3 (cloud) with faster-whisper fallback ──────────
 
 _stt_model = None
 _stt_lock  = asyncio.Lock()
 
 
 async def _get_stt_model():
+    """Lazy-load local faster-whisper (only used if NIM STT key absent)."""
     global _stt_model
     if _stt_model is not None:
         return _stt_model
@@ -39,8 +40,8 @@ async def _get_stt_model():
             return _stt_model
         try:
             from faster_whisper import WhisperModel
-            device    = cfg.STT_DEVICE if cfg.STT_DEVICE == "cpu" else "auto"
-            ctype     = "float16" if device != "cpu" else "int8"
+            device = cfg.STT_DEVICE if cfg.STT_DEVICE == "cpu" else "auto"
+            ctype  = "float16" if device != "cpu" else "int8"
             log.info("Loading faster-whisper %s on %s…", cfg.STT_MODEL, device)
             _stt_model = await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -53,20 +54,50 @@ async def _get_stt_model():
     return _stt_model
 
 
+async def _nim_transcribe(audio_bytes: bytes) -> Optional[str]:
+    """Transcribe via NVIDIA NIM Whisper Large v3 API."""
+    import httpx
+    headers = {"Authorization": f"Bearer {cfg.NIM_STT_API_KEY}"}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{cfg.NIM_SPEECH_BASE}/audio/transcriptions",
+                headers=headers,
+                files={"file": ("audio.wav", audio_bytes, "audio/wav")},
+                data={"language": cfg.STT_LANGUAGE or "en"},
+            )
+            if resp.status_code != 200:
+                log.warning("NIM STT HTTP %d: %s", resp.status_code, resp.text[:200])
+                return None
+            text = resp.json().get("text", "").strip()
+            log.info("NIM STT → %d chars", len(text))
+            return text or None
+    except Exception as exc:
+        log.error("NIM STT failed: %s", exc)
+        return None
+
+
 async def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
     """
-    Transcribe audio bytes to text using faster-whisper.
-    Falls back to None if model unavailable.
+    Transcribe audio bytes to text.
+    Primary: NVIDIA NIM Whisper Large v3 (if NIM_STT_API_KEY set).
+    Fallback: local faster-whisper.
     """
+    # ── NIM cloud path ────────────────────────────────────────────────────
+    if cfg.NIM_STT_API_KEY:
+        result = await _nim_transcribe(audio_bytes)
+        if result:
+            return result
+        log.warning("NIM STT returned nothing, trying local fallback")
+
+    # ── Local faster-whisper fallback ─────────────────────────────────────
     model = await _get_stt_model()
     if model is None:
         return None
 
-    suffix = ".wav"  # accept WAV/WebM/etc — faster-whisper handles most formats
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp_path = tmp.name
         tmp.write(audio_bytes)
-
     try:
         segments, info = await asyncio.get_event_loop().run_in_executor(
             None,
@@ -74,15 +105,15 @@ async def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
                 tmp_path,
                 language=cfg.STT_LANGUAGE,
                 beam_size=5,
-                vad_filter=True,          # removes silence
-                word_timestamps=False,    # faster without word timestamps
+                vad_filter=True,
+                word_timestamps=False,
             ),
         )
         text = " ".join(seg.text for seg in segments).strip()
-        log.info("STT: %.1fs audio → %d chars", info.duration, len(text))
+        log.info("local STT: %.1fs audio → %d chars", info.duration, len(text))
         return text if text else None
     except Exception as exc:
-        log.error("STT transcription failed: %s", exc)
+        log.error("local STT transcription failed: %s", exc)
         return None
     finally:
         try:
@@ -91,9 +122,40 @@ async def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
             pass
 
 
-# ─── TTS: pyttsx3 or system synthesis ─────────────────────────────────────────
+# ─── TTS: NIM Magpie TTS (cloud) with edge-tts / pyttsx3 fallback ────────────
 
 _tts_lock = asyncio.Lock()
+
+
+async def _nim_synthesize(text: str, voice: str = "female") -> Optional[bytes]:
+    """Synthesize via NVIDIA NIM Magpie TTS Multilingual API. Returns WAV bytes."""
+    import httpx
+    nim_voice = cfg.NIM_TTS_VOICE  # e.g. "Magpie-Multilingual.EN-US.Aria"
+    if "male" in voice and "female" not in voice:
+        # Pick a male voice — Jason is available in EN-US
+        nim_voice = "Magpie-Multilingual.EN-US.Jason"
+    headers = {"Authorization": f"Bearer {cfg.NIM_TTS_API_KEY}"}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{cfg.NIM_SPEECH_BASE}/audio/synthesize",
+                headers=headers,
+                files={
+                    "text":     (None, text),
+                    "language": (None, "en-US"),
+                    "voice":    (None, nim_voice),
+                },
+            )
+            if resp.status_code != 200:
+                log.warning("NIM TTS HTTP %d: %s", resp.status_code, resp.text[:200])
+                return None
+            audio = resp.content
+            if audio:
+                log.info("NIM TTS: synthesized %d bytes (WAV)", len(audio))
+                return audio
+    except Exception as exc:
+        log.error("NIM TTS failed: %s", exc)
+    return None
 
 
 async def synthesize_speech(
@@ -102,19 +164,26 @@ async def synthesize_speech(
     speed: float = 1.0,
 ) -> Optional[bytes]:
     """
-    Synthesize text to MP3 bytes using edge-tts (Microsoft neural voices).
-    Falls back to pyttsx3 if edge-tts is unavailable.
+    Synthesize text to audio bytes.
+    Primary: NVIDIA NIM Magpie TTS Multilingual (WAV, if NIM_TTS_API_KEY set).
+    Fallback 1: edge-tts (Microsoft neural, MP3, free).
+    Fallback 2: pyttsx3 (local, WAV).
     """
     async with _tts_lock:
-        # ── Edge TTS (Microsoft neural — high quality, free) ─────────────
+        # ── NIM Magpie TTS ────────────────────────────────────────────────
+        if cfg.NIM_TTS_API_KEY:
+            audio = await _nim_synthesize(text, voice)
+            if audio:
+                return audio
+            log.warning("NIM TTS returned nothing, falling back to edge-tts")
+
+        # ── edge-tts fallback (Microsoft Neural, MP3) ─────────────────────
         try:
             import edge_tts  # type: ignore
             import io
-
             voice_name = "en-US-AriaNeural" if "female" in voice else "en-US-GuyNeural"
             rate_pct = f"+{int((speed - 1.0) * 100)}%" if speed >= 1.0 else f"{int((speed - 1.0) * 100)}%"
             communicate = edge_tts.Communicate(text, voice=voice_name, rate=rate_pct)
-
             buf = io.BytesIO()
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
@@ -128,7 +197,7 @@ async def synthesize_speech(
         except Exception as exc:
             log.warning("edge-tts TTS failed: %s", exc)
 
-        # ── pyttsx3 fallback ──────────────────────────────────────────────
+        # ── pyttsx3 last-resort fallback ──────────────────────────────────
         try:
             import pyttsx3  # type: ignore
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:

@@ -24,8 +24,36 @@ def _latest_lab(labs: Dict, key: str) -> float:
     arr = labs.get(key, [])
     if not arr:
         return 0.0
+    for entry in reversed(arr):
+        # Ignore values explicitly flagged as probable mislabeled outliers.
+        if isinstance(entry, dict) and entry.get("outlier"):
+            continue
+        return float(entry["v"] if isinstance(entry, dict) else entry)
+    # If every point is held as outlier, return latest raw value as fallback.
     entry = arr[-1]
     return float(entry["v"] if isinstance(entry, dict) else entry)
+
+
+def _lab_series_without_outliers(arr: List[Dict]) -> List[float]:
+    values: List[float] = []
+    for item in (arr or []):
+        if isinstance(item, dict) and item.get("outlier"):
+            continue
+        try:
+            values.append(float(item["v"] if isinstance(item, dict) else item))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return values
+
+
+def _format_outlier_hold_lines(ctx: AgentContext) -> List[str]:
+    lines: List[str] = []
+    for o in (ctx.outliers or []):
+        lines.append(
+            f"{o['lab'].upper()} {o['value']} at {o['timepoint']} "
+            f"(Z={o['z']} vs 72h mean {o['mean']}+/-{o['std']})"
+        )
+    return lines
 
 
 async def _ollama_or_nim(ctx: AgentContext, messages: List[Dict], max_tokens: int = 700) -> str:
@@ -143,7 +171,27 @@ async def agent_outlier_detector(ctx: AgentContext) -> None:
     await ctx.set_agent_status(orch, "OUTLIER_DETECTOR", "active")
     try:
         outliers = detect_lab_outliers(ctx.patient.labs, z_threshold=cfg.OUTLIER_Z)
+        # Mark held values directly in lab series so downstream agents can skip them.
+        for outlier in outliers:
+            lab_name = outlier.get("lab")
+            lab_arr = (ctx.patient.labs or {}).get(lab_name, [])
+            if not lab_arr:
+                continue
+            latest = lab_arr[-1]
+            if isinstance(latest, dict):
+                latest["outlier"] = True
+                latest["hold_reason"] = "probable_mislabeled_result"
+                latest["redraw_required"] = True
+
         ctx.outliers = outliers
+        ctx.diagnosis_hold = bool(outliers)
+        ctx.hold_reasons = [
+            (
+                f"Probable mislabeled lab result held: {o['lab'].upper()}={o['value']} "
+                f"(Z={o['z']}). Confirmed redraw required before diagnosis revision."
+            )
+            for o in outliers
+        ]
         if outliers:
             summary = ", ".join(f"{o['lab']}(Z={o['z']})" for o in outliers)
             await ctx.log("OUTLIER_DETECTOR", f"[!] {len(outliers)} outlier(s): {summary}", "warn")
@@ -153,7 +201,14 @@ async def agent_outlier_detector(ctx: AgentContext) -> None:
         log.exception("OUTLIER_DETECTOR error")
         ctx.outliers = []
 
-    await ctx.send({"type": "agent_result", "orchestrator": "SAFETY", "agent": "OUTLIER_DETECTOR", "data": ctx.outliers})
+    await ctx.send({
+        "type": "agent_result",
+        "orchestrator": "SAFETY",
+        "agent": "OUTLIER_DETECTOR",
+        "data": ctx.outliers,
+        "diagnosis_hold": ctx.diagnosis_hold,
+        "hold_reasons": ctx.hold_reasons,
+    })
     await ctx.set_agent_status("SAFETY", "OUTLIER_DETECTOR", "done")
 
 
@@ -299,9 +354,8 @@ async def agent_trend_classifier(ctx: AgentContext) -> None:
         for key, arr in labs.items():
             if not isinstance(arr, list) or len(arr) < 2:
                 continue
-            try:
-                vals = [float(x["v"] if isinstance(x, dict) else x) for x in arr]
-            except (KeyError, TypeError, ValueError):
+            vals = _lab_series_without_outliers(arr)
+            if len(vals) < 2:
                 continue
 
             n = len(vals)
@@ -362,9 +416,8 @@ async def agent_trajectory_predictor(ctx: AgentContext) -> None:
         for key, arr in labs.items():
             if not isinstance(arr, list) or len(arr) < 2:
                 continue
-            try:
-                vals = [float(x["v"] if isinstance(x, dict) else x) for x in arr]
-            except (KeyError, TypeError, ValueError):
+            vals = _lab_series_without_outliers(arr)
+            if len(vals) < 2:
                 continue
 
             # Weighted slope: recent delta gets 2x weight vs older
@@ -688,6 +741,125 @@ async def agent_rag_explainer(ctx: AgentContext, guidelines: List[Dict]) -> None
     await ctx.set_agent_status(orch, "RAG_EXPLAINER", "done")
 
 
+async def agent_family_communicator(ctx: AgentContext) -> None:
+    orch = "COMMUNICATION"
+    await ctx.set_agent_status(orch, "FAMILY_COMMUNICATOR", "active")
+    try:
+        notes = (ctx.patient.notes or [])[-3:]
+        notes_text = "\n".join(
+            f"- {n.get('time', '?')}: {n.get('text', '')}" for n in notes
+        ) or "- No narrative notes available"
+        outlier_lines = _format_outlier_hold_lines(ctx)
+        outlier_block = "\n".join(f"- {line}" for line in outlier_lines) or "- None"
+        language_name = "Hindi"
+
+        prompt = (
+            "Create a compassionate family update for the last 12 hours in ICU. "
+            "Avoid clinical jargon. Use short, human language. Mention what changed, what doctors are doing now, "
+            "and what the next few hours will focus on.\n\n"
+            f"Patient: {ctx.patient.name}, age {ctx.patient.age}.\n"
+            f"Current alert level: {ctx.alert_level}.\n"
+            f"SOFA total: {ctx.sofa.get('total', '?') if ctx.sofa else '?'}.\n"
+            f"NEWS2 total: {ctx.news2.get('total', '?') if ctx.news2 else '?'}.\n"
+            f"Recent notes:\n{notes_text}\n\n"
+            "Potential lab error hold flags:\n"
+            f"{outlier_block}\n\n"
+            "Return valid JSON only with this schema:\n"
+            "{\n"
+            '  "language": "Hindi",\n'
+            '  "english_summary": "...",\n'
+            '  "regional_summary": "...",\n'
+            '  "care_points": ["...", "...", "..."]\n'
+            "}\n"
+            "If there is a held outlier, explicitly say diagnosis is not being changed until a confirmed redraw is received."
+        )
+
+        messages = [
+            {"role": "system", "content": "You write family-facing ICU summaries. Output JSON only."},
+            {"role": "user", "content": prompt},
+        ]
+
+        key = ctx.nim_key or cfg.nim_key("fallback") or cfg.nim_key("chief")
+        model = cfg.FALLBACK_MODEL
+        raw = await nim.chat(model, messages, key, max_tokens=500) if key else ""
+
+        parsed: Dict = {}
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                m = re.search(r"\{[\s\S]*\}", raw)
+                if m:
+                    parsed = json.loads(m.group(0))
+
+        if not parsed:
+            hold_sentence = (
+                "One of the latest lab numbers looks inconsistent with the past three days, "
+                "so the team is treating it as a likely sample error and will confirm with a redraw before changing diagnosis."
+                if ctx.diagnosis_hold else
+                "No suspicious lab mismatch was detected in the most recent trend check."
+            )
+            parsed = {
+                "language": language_name,
+                "english_summary": (
+                    "In the last 12 hours, your family member has been closely monitored in ICU. "
+                    f"Current risk level is {ctx.alert_level.lower()}. "
+                    + hold_sentence
+                ),
+                "regional_summary": (
+                    "Pichhle 12 ghanton mein ICU team ne kareebi nigrani rakhi hai. "
+                    f"Filhaal risk level {ctx.alert_level.lower()} hai. "
+                    + (
+                        "Ek naya lab result purane teen din ke trend se match nahi karta, isliye diagnosis redraw se pehle badla nahi jayega."
+                        if ctx.diagnosis_hold else
+                        "Filhaal kisi badi uljhan wale lab mismatch ka sanket nahi mila."
+                    )
+                ),
+                "care_points": [
+                    "Breathing, blood pressure, and kidney-related markers are being checked continuously.",
+                    "The team is reviewing medicine response hour by hour.",
+                    "You will be updated quickly if there is any major change.",
+                ],
+            }
+
+        # Enforce explicit hold language for Twist 2.
+        if ctx.diagnosis_hold:
+            hold_line_en = "Diagnosis is on hold for the suspicious result until a confirmed redraw is received."
+            hold_line_rg = "Sandehjanak report par diagnosis redraw confirm hone tak hold par rahega."
+            if hold_line_en.lower() not in parsed.get("english_summary", "").lower():
+                parsed["english_summary"] = f"{parsed.get('english_summary', '').strip()} {hold_line_en}".strip()
+            if hold_line_rg.lower() not in parsed.get("regional_summary", "").lower():
+                parsed["regional_summary"] = f"{parsed.get('regional_summary', '').strip()} {hold_line_rg}".strip()
+
+        parsed.setdefault("language", language_name)
+        parsed.setdefault("english_summary", "")
+        parsed.setdefault("regional_summary", "")
+        parsed.setdefault("care_points", [])
+        parsed["diagnosis_hold"] = ctx.diagnosis_hold
+        parsed["hold_reasons"] = ctx.hold_reasons
+        ctx.family_communication = parsed
+
+    except Exception as exc:
+        log.exception("FAMILY_COMMUNICATOR error")
+        ctx.family_communication = {
+            "language": "Hindi",
+            "english_summary": "Family communication summary unavailable.",
+            "regional_summary": "Parivar update iss samay uplabdh nahin hai.",
+            "care_points": [],
+            "diagnosis_hold": ctx.diagnosis_hold,
+            "hold_reasons": ctx.hold_reasons,
+            "error": str(exc),
+        }
+
+    await ctx.send({
+        "type": "agent_result",
+        "orchestrator": orch,
+        "agent": "FAMILY_COMMUNICATOR",
+        "data": ctx.family_communication,
+    })
+    await ctx.set_agent_status(orch, "FAMILY_COMMUNICATOR", "done")
+
+
 # ─── Wave 3 — Chief synthesis ─────────────────────────────────────────────────
 
 async def agent_synthesis(ctx: AgentContext) -> None:
@@ -710,11 +882,11 @@ async def agent_synthesis(ctx: AgentContext) -> None:
         lab_traj_lines.append(f"  {k.upper()}: {vals} {unit}")
     lab_traj = "\n".join(lab_traj_lines) or "  No lab data available"
 
-    # Outlier note
-    outlier_note = "\n".join(
-        f"!! OUTLIER HELD: {o['lab'].upper()} {o['value']} at {o['timepoint']} "
-        f"(Z={o['z']} vs 72h mean {o['mean']}+/-{o['std']}) — DIAGNOSIS HELD, REDRAW REQUIRED"
-        for o in (ctx.outliers or [])
+    hold_gate = (
+        "DIAGNOSIS REVISION IS CURRENTLY LOCKED because probable mislabeled outlier labs were detected. "
+        "Do not revise diagnosis until confirmed redraw is received."
+        if ctx.diagnosis_hold else
+        "No outlier hold lock is active."
     )
 
     # Medication conflicts
@@ -797,6 +969,9 @@ TRAJECTORY PREDICTIONS (6h/12h):
 {traj_summary}
 
 {outlier_safety_block}
+
+DIAGNOSIS HOLD GATE:
+{hold_gate}
 
 ACTIVE ALERTS ({ctx.alert_level}) — from Alert Escalation Agent:
 {alert_summary}
@@ -927,8 +1102,29 @@ SAFETY DISCLAIMER: This report is generated by an AI decision-support system (HC
             clean_lines.append(line)
 
     ctx.synthesis = '\n'.join(clean_lines).strip()
+
+    if ctx.diagnosis_hold:
+        ctx.synthesis = (
+            "DIAGNOSIS REVISION DEFERRED: A probable mislabeled outlier lab was detected. "
+            "Working diagnosis is intentionally unchanged until confirmed redraw.\n\n"
+            + ctx.synthesis
+        )
+
+    if ctx.diagnosis_hold and "confirmed redraw" not in ctx.synthesis.lower():
+        ctx.synthesis += (
+            "\n\nOUTLIER FLAGS (from Outlier Detection Module):\n"
+            + "\n".join(f"- {line} — probable mislabeled result; diagnosis held until confirmed redraw." for line in _format_outlier_hold_lines(ctx))
+            + "\n\nRECOMMENDED ACTIONS:\n"
+            "- Repeat sample collection and verify patient/lab label matching — IMMEDIATE\n"
+            "- Keep prior diagnostic plan unchanged until redraw result is verified — URGENT"
+        )
+
     hm = re.search(r'SHIFT HANDOVER BRIEF[^:]*:\s*([\s\S]+?)(?:\n\n|\n---|\n#|$)', ctx.synthesis, re.I)
     ctx.handover  = hm.group(1).strip() if hm else ""
+    if ctx.diagnosis_hold and "redraw" not in ctx.handover.lower():
+        ctx.handover = (
+            (ctx.handover + " ") if ctx.handover else ""
+        ) + "Diagnosis update is held on a probable mislabeled lab outlier until confirmed redraw."
 
     await ctx.send({"type": "agent_result", "orchestrator": orch, "agent": "CHIEF_AGENT",
                     "data": {"synthesis": ctx.synthesis, "handover": ctx.handover}})
@@ -979,20 +1175,19 @@ async def master_orchestrate(ctx: AgentContext) -> None:
                     "data": {"sofa": ctx.sofa, "news2": ctx.news2}})
 
     # Explicit 4-role pipeline required by PS.
-    # NOTE_PARSER and the safety/temporal agents are independent — run in parallel.
-    # agent_temporal_lab_mapper needs parsed_notes so it runs after both complete.
+    # Run outlier detector first so downstream agents can skip held lab values.
     await ctx.set_orch_status("NOTE_PARSER_AGENT", "active")
     await ctx.set_orch_status("TEMPORAL_LAB_MAPPER_AGENT", "active")
     await asyncio.gather(
         agent_note_parser(ctx),
-        asyncio.gather(
-            agent_outlier_detector(ctx),
-            agent_med_safety(ctx),
-            agent_alert_escalation(ctx),
-            agent_trend_classifier(ctx),
-            agent_trajectory_predictor(ctx),
-            return_exceptions=True,
-        ),
+        agent_outlier_detector(ctx),
+        return_exceptions=True,
+    )
+    await asyncio.gather(
+        agent_med_safety(ctx),
+        agent_alert_escalation(ctx),
+        agent_trend_classifier(ctx),
+        agent_trajectory_predictor(ctx),
         return_exceptions=True,
     )
     await agent_temporal_lab_mapper(ctx)
@@ -1000,6 +1195,7 @@ async def master_orchestrate(ctx: AgentContext) -> None:
     await ctx.set_orch_status("TEMPORAL_LAB_MAPPER_AGENT", "done")
     await run_guideline_rag_agent(ctx)
     await run_chief_synthesis_agent(ctx)
+    await agent_family_communicator(ctx)
 
     elapsed = round((time.time() - start) * 1000)
     await ctx.send({
@@ -1008,6 +1204,8 @@ async def master_orchestrate(ctx: AgentContext) -> None:
         "alert_level":   ctx.alert_level,
         "sofa_total":    ctx.sofa.get("total", 0),
         "news2_total":   ctx.news2.get("total", 0),
+        "diagnosis_hold": ctx.diagnosis_hold,
+        "family_summary_ready": bool(ctx.family_communication),
     })
     await ctx.log("HC01", f"=== PIPELINE COMPLETE in {elapsed} ms ===", "info")
 
