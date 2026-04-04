@@ -57,14 +57,18 @@ async def lifespan(app: FastAPI):
 
     await preembed_guidelines()
 
-    # Pre-warm faster-whisper STT model (avoids 30s delay on first voice call)
+    # Pre-warm available STT backends so the first voice call does not stall.
     try:
-        from .voice_workflow import _get_stt_model
-        stt = await _get_stt_model()
-        if stt:
-            log.info("STT model (faster-whisper) pre-warmed")
+        from .voice_workflow import _get_riva_services, _get_stt_model
+        riva = await _get_riva_services()
+        if riva:
+            log.info("STT backend (Riva) pre-warmed")
         else:
-            log.warning("STT model not available — voice transcription disabled")
+            stt = await _get_stt_model()
+            if stt:
+                log.info("STT backend (faster-whisper) pre-warmed")
+            else:
+                log.warning("No STT backend available — voice transcription disabled")
     except Exception as exc:
         log.warning("STT pre-warm failed: %s", exc)
 
@@ -459,9 +463,8 @@ async def voice_transcribe(req: TranscribeRequest) -> Dict[str, Any]:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 audio")
 
-    from .voice_workflow import _get_stt_model
-    model = await _get_stt_model()
-    if model is None:
+    from .voice_workflow import _get_riva_services, _get_stt_model
+    if await _get_riva_services() is None and cfg.NIM_STT_API_KEY == "" and await _get_stt_model() is None:
         return {"available": False, "text": None,
                 "message": "STT engine not available on server."}
     transcript = await transcribe_audio(audio_bytes)

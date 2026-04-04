@@ -67,9 +67,10 @@ class Config:
     NIM_TTS_API_KEY: str = os.getenv("NIM_TTS_API_KEY", "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")
     NIM_TTS_VOICE: str = os.getenv("NIM_TTS_VOICE", "Magpie-Multilingual.EN-US.Aria")
     NIM_SPEECH_BASE: str = "https://integrate.api.nvidia.com/v1"
+    RIVA_SPEECH_BASE: str = os.getenv("RIVA_SPEECH_BASE", "grpc.nvcf.nvidia.com:443")
+    RIVA_STT_FUNCTION_ID: str = os.getenv("RIVA_STT_FUNCTION_ID", "b702f636-f60c-4a3d-a6f4-f3568c13bd7d")
+    RIVA_TTS_FUNCTION_ID: str = os.getenv("RIVA_TTS_FUNCTION_ID", "877104f7-e885-42b9-8de8-f6e4c6303969")
 
-    # ═══════════════════════════════════════════════════════════
-    # EHR / FHIR
     # ═══════════════════════════════════════════════════════════
     FHIR_SERVER_URL: str = os.getenv("FHIR_SERVER_URL", "")
     FHIR_CLIENT_ID: str = os.getenv("FHIR_CLIENT_ID", "")

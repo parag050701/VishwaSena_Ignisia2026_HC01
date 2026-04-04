@@ -7,6 +7,7 @@ python-dotenv==1.0.0
 # STT - Speech to Text
 openai-whisper==20231106
 faster-whisper==0.10.0
+nvidia-riva-client>=2.16.0
 
 # TTS - Text to Speech (choose at least one)
 TTS==0.22.0

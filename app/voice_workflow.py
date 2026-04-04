@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
 import logging
 import os
+import wave
 import tempfile
 import time
 import uuid
@@ -23,11 +25,84 @@ from .config import cfg
 
 log = logging.getLogger("HC01.voice")
 
+RIVA_CALL_TIMEOUT_SECONDS = 20
+
 
 # ─── STT: NIM Whisper Large v3 (cloud) with faster-whisper fallback ──────────
 
 _stt_model = None
 _stt_lock  = asyncio.Lock()
+_riva_services = None
+_riva_lock = asyncio.Lock()
+
+
+def _to_wav_bytes(audio_bytes: bytes) -> bytes:
+    """Normalize audio to mono 16-bit 16 kHz WAV for STT."""
+    try:
+        from pydub import AudioSegment
+
+        segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
+        segment = segment.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+        buf = io.BytesIO()
+        segment.export(buf, format="wav")
+        return buf.getvalue()
+    except Exception:
+        return audio_bytes
+
+
+def _looks_like_wav(audio_bytes: bytes) -> bool:
+    return len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE"
+
+
+async def _get_riva_services():
+    """Build cached Riva ASR/TTS clients if the package and keys are available."""
+    global _riva_services
+    if _riva_services is not None:
+        return _riva_services
+
+    async with _riva_lock:
+        if _riva_services is not None:
+            return _riva_services
+
+        try:
+            import riva.client
+
+            auth_stt = riva.client.Auth(
+                use_ssl=True,
+                uri=cfg.RIVA_SPEECH_BASE,
+                metadata_args=(
+                    ("function-id", cfg.RIVA_STT_FUNCTION_ID),
+                    ("authorization", f"Bearer {cfg.NIM_STT_API_KEY}"),
+                ),
+                options=[
+                    ("grpc.max_receive_message_length", 32 * 1024 * 1024),
+                    ("grpc.max_send_message_length", 32 * 1024 * 1024),
+                ],
+            )
+            auth_tts = riva.client.Auth(
+                use_ssl=True,
+                uri=cfg.RIVA_SPEECH_BASE,
+                metadata_args=(
+                    ("function-id", cfg.RIVA_TTS_FUNCTION_ID),
+                    ("authorization", f"Bearer {cfg.NIM_TTS_API_KEY}"),
+                ),
+                options=[
+                    ("grpc.max_receive_message_length", 32 * 1024 * 1024),
+                    ("grpc.max_send_message_length", 32 * 1024 * 1024),
+                ],
+            )
+            _riva_services = (
+                riva.client.ASRService(auth_stt),
+                riva.client.SpeechSynthesisService(auth_tts),
+                riva.client.RecognitionConfig,
+                riva.client.AudioEncoding,
+            )
+            log.info("Riva gRPC clients initialized")
+        except Exception as exc:
+            log.warning("Riva gRPC unavailable: %s", exc)
+            _riva_services = None
+
+    return _riva_services
 
 
 async def _get_stt_model():
@@ -83,9 +158,47 @@ async def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
     Primary: NVIDIA NIM Whisper Large v3 (if NIM_STT_API_KEY set).
     Fallback: local faster-whisper.
     """
+    wav_bytes = _to_wav_bytes(audio_bytes)
+
+    # ── Riva gRPC path ────────────────────────────────────────────────────
+    services = await _get_riva_services()
+    if services:
+        asr_service, _, recognition_config_cls, audio_encoding_cls = services
+        try:
+            config = recognition_config_cls(
+                encoding=audio_encoding_cls.LINEAR_PCM,
+                language_code=cfg.STT_LANGUAGE or "en",
+                model=cfg.STT_MODEL,
+                max_alternatives=1,
+                profanity_filter=False,
+                enable_automatic_punctuation=True,
+                verbatim_transcripts=False,
+                sample_rate_hertz=16000,
+                audio_channel_count=1,
+            )
+            response_future = asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: asr_service.offline_recognize(wav_bytes, config),
+            )
+            response = await asyncio.wait_for(response_future, timeout=RIVA_CALL_TIMEOUT_SECONDS)
+            pieces = []
+            for result in getattr(response, "results", []):
+                alternatives = getattr(result, "alternatives", [])
+                if alternatives:
+                    transcript = getattr(alternatives[0], "transcript", "").strip()
+                    if transcript:
+                        pieces.append(transcript)
+            transcript = " ".join(pieces).strip()
+            if transcript:
+                log.info("Riva STT → %d chars", len(transcript))
+                return transcript
+            log.warning("Riva STT returned no transcript, falling back")
+        except Exception as exc:
+            log.warning("Riva STT failed: %s", exc)
+
     # ── NIM cloud path ────────────────────────────────────────────────────
     if cfg.NIM_STT_API_KEY:
-        result = await _nim_transcribe(audio_bytes)
+        result = await _nim_transcribe(wav_bytes)
         if result:
             return result
         log.warning("NIM STT returned nothing, trying local fallback")
@@ -97,7 +210,7 @@ async def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp_path = tmp.name
-        tmp.write(audio_bytes)
+        tmp.write(wav_bytes)
     try:
         segments, info = await asyncio.get_event_loop().run_in_executor(
             None,
@@ -170,6 +283,29 @@ async def synthesize_speech(
     Fallback 2: pyttsx3 (local, WAV).
     """
     async with _tts_lock:
+        services = await _get_riva_services()
+        if services:
+            _, tts_service, _, audio_encoding_cls = services
+            try:
+                response_future = asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: tts_service.synthesize(
+                        text=text,
+                        voice_name=cfg.NIM_TTS_VOICE,
+                        language_code="en-US",
+                        encoding=audio_encoding_cls.LINEAR_PCM,
+                        sample_rate_hz=24000,
+                    ),
+                )
+                response = await asyncio.wait_for(response_future, timeout=RIVA_CALL_TIMEOUT_SECONDS)
+                audio = getattr(response, "audio", b"")
+                if audio:
+                    log.info("Riva TTS: synthesized %d bytes", len(audio))
+                    return audio
+                log.warning("Riva TTS returned empty audio, falling back")
+            except Exception as exc:
+                log.warning("Riva TTS failed: %s", exc)
+
         # ── NIM Magpie TTS ────────────────────────────────────────────────
         if cfg.NIM_TTS_API_KEY:
             audio = await _nim_synthesize(text, voice)
