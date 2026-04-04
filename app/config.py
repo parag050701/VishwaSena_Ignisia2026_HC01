@@ -51,16 +51,21 @@ class Config:
     # ═══════════════════════════════════════════════════════════
     # VOICE SETTINGS
     # ═══════════════════════════════════════════════════════════
-    STT_MODEL: str = os.getenv("STT_MODEL", "base")
+    STT_BACKEND: str = os.getenv("STT_BACKEND", "parakeet")
+    STT_MODEL: str = os.getenv("STT_MODEL", "nvidia/parakeet-tdt-0.6b-v2")
+    STT_FALLBACK_MODEL: str = os.getenv("STT_FALLBACK_MODEL", "base")
     STT_DEVICE: str = os.getenv("STT_DEVICE", "cuda")
     STT_LANGUAGE: str = os.getenv("STT_LANGUAGE", "en")
     STT_CHUNK_SIZE: int = int(os.getenv("STT_CHUNK_SIZE", "30"))
 
-    TTS_ENGINE: str = os.getenv("TTS_ENGINE", "kokoro")
+    TTS_ENGINE: str = os.getenv("TTS_ENGINE", "coqui")
     TTS_VOICE: str = os.getenv("TTS_VOICE", "female")
     TTS_SPEED: float = float(os.getenv("TTS_SPEED", "1.0"))
     TTS_DEVICE: str = os.getenv("TTS_DEVICE", "cuda")
     TTS_SAMPLE_RATE: int = 24000
+    COQUI_MODEL: str = os.getenv("COQUI_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+    COQUI_LANGUAGE: str = os.getenv("COQUI_LANGUAGE", "en")
+    COQUI_SPEAKER_WAV: str = os.getenv("COQUI_SPEAKER_WAV", "")
 
     # NIM Speech API keys
     NIM_STT_API_KEY: str = os.getenv("NIM_STT_API_KEY", "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")

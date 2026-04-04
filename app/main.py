@@ -59,7 +59,10 @@ async def lifespan(app: FastAPI):
 
     # Pre-warm available STT backends so the first voice call does not stall.
     try:
-        from .voice_workflow import _get_riva_services, _get_stt_model
+        from .voice_workflow import _get_parakeet_asr, _get_riva_services, _get_stt_model
+        parakeet = await _get_parakeet_asr()
+        if parakeet:
+            log.info("STT backend (Parakeet) pre-warmed")
         riva = await _get_riva_services()
         if riva:
             log.info("STT backend (Riva) pre-warmed")
@@ -455,7 +458,7 @@ class SynthesizeRequest(BaseModel):
 @app.post("/api/voice/transcribe", tags=["Voice"])
 async def voice_transcribe(req: TranscribeRequest) -> Dict[str, Any]:
     """
-    Transcribe base64-encoded audio to text using faster-whisper.
+    Transcribe base64-encoded audio to text.
     Returns the transcript or an error if STT is unavailable.
     """
     try:
@@ -463,14 +466,10 @@ async def voice_transcribe(req: TranscribeRequest) -> Dict[str, Any]:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 audio")
 
-    from .voice_workflow import _get_riva_services, _get_stt_model
-    if await _get_riva_services() is None and cfg.NIM_STT_API_KEY == "" and await _get_stt_model() is None:
-        return {"available": False, "text": None,
-                "message": "STT engine not available on server."}
     transcript = await transcribe_audio(audio_bytes)
     if not transcript:
-        return {"available": True, "text": None,
-                "message": "No speech detected — speak clearly and try again."}
+        return {"available": False, "text": None,
+                "message": "No transcript generated. Check STT model setup or audio quality."}
     return {"available": True, "text": transcript}
 
 
@@ -486,7 +485,7 @@ async def voice_synthesize(req: SynthesizeRequest) -> Dict[str, Any]:
     audio = await synthesize_speech(req.text, voice=req.voice, speed=req.speed)
     if audio is None:
         return {"available": False, "audio_b64": None,
-                "message": "No TTS engine available. Install kokoro or pyttsx3."}
+                "message": "No TTS engine available. Install Coqui TTS or configure fallback engines."}
     return {"available": True, "audio_b64": base64.b64encode(audio).decode()}
 
 

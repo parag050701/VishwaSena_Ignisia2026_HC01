@@ -21,8 +21,8 @@ sentence-transformers>=2.7.0
 chromadb>=0.5.0
 torch>=2.0.0
 
-# Optional: voice features (uncomment to enable)
-# faster-whisper>=1.0.0
-# TTS>=0.22.0
-# soundfile>=0.12.0
-# sounddevice>=0.4.6
+# Voice features
+faster-whisper>=1.0.0
+TTS>=0.22.0
+soundfile>=0.12.0
+transformers>=4.34.0

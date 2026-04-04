@@ -17,6 +17,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .audit import log_voice_session
@@ -28,12 +29,16 @@ log = logging.getLogger("HC01.voice")
 RIVA_CALL_TIMEOUT_SECONDS = 20
 
 
-# ─── STT: NIM Whisper Large v3 (cloud) with faster-whisper fallback ──────────
+# ─── STT: Parakeet primary with cloud/local fallbacks ───────────────────────
 
 _stt_model = None
+_parakeet_asr = None
 _stt_lock  = asyncio.Lock()
+_parakeet_lock = asyncio.Lock()
 _riva_services = None
 _riva_lock = asyncio.Lock()
+_coqui_tts = None
+_coqui_lock = asyncio.Lock()
 
 
 def _to_wav_bytes(audio_bytes: bytes) -> bytes:
@@ -117,16 +122,87 @@ async def _get_stt_model():
             from faster_whisper import WhisperModel
             device = cfg.STT_DEVICE if cfg.STT_DEVICE == "cpu" else "auto"
             ctype  = "float16" if device != "cpu" else "int8"
-            log.info("Loading faster-whisper %s on %s…", cfg.STT_MODEL, device)
+            fallback_model = cfg.STT_FALLBACK_MODEL or "base"
+            log.info("Loading faster-whisper %s on %s…", fallback_model, device)
             _stt_model = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: WhisperModel(cfg.STT_MODEL, device=device, compute_type=ctype),
+                lambda: WhisperModel(fallback_model, device=device, compute_type=ctype),
             )
             log.info("faster-whisper loaded")
         except Exception as exc:
             log.warning("faster-whisper not available: %s", exc)
             _stt_model = None
     return _stt_model
+
+
+async def _get_parakeet_asr():
+    """Lazy-load NVIDIA NeMo Parakeet ASR model for local STT."""
+    global _parakeet_asr
+    if _parakeet_asr is not None:
+        return _parakeet_asr
+
+    async with _parakeet_lock:
+        if _parakeet_asr is not None:
+            return _parakeet_asr
+
+        try:
+            os.environ["CUDA_VISIBLE_DEVICES"] = ""
+            os.environ["NVIDIA_VISIBLE_DEVICES"] = ""
+            import torch
+            torch.cuda.is_available = lambda: False  # type: ignore[assignment]
+            torch.cuda.current_device = lambda: None  # type: ignore[assignment]
+
+            model_id = cfg.STT_MODEL or "nvidia/parakeet-tdt-0.6b-v2"
+            log.info("Loading Parakeet STT model via NeMo: %s", model_id)
+            _parakeet_asr = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: __import__("nemo.collections.asr", fromlist=["models"]).models.ASRModel.from_pretrained(model_name=model_id),
+            )
+            log.info("Parakeet STT pipeline loaded")
+        except Exception as exc:
+            log.warning("Parakeet STT unavailable: %s", exc)
+            _parakeet_asr = None
+
+    return _parakeet_asr
+
+
+async def _parakeet_transcribe(wav_bytes: bytes) -> Optional[str]:
+    """Transcribe with local HF Parakeet model."""
+    asr = await _get_parakeet_asr()
+    if asr is None:
+        return None
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp_path = tmp.name
+        tmp.write(wav_bytes)
+
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(None, lambda: asr.transcribe([tmp_path], timestamps=False))
+        transcript = ""
+        if isinstance(result, tuple) and result:
+            transcripts = result[0]
+            if transcripts:
+                first = transcripts[0]
+                transcript = getattr(first, "text", "") or str(first)
+        elif isinstance(result, list) and result:
+            first = result[0]
+            transcript = getattr(first, "text", "") or str(first)
+        elif isinstance(result, dict):
+            transcript = str(result.get("text", "")).strip()
+
+        transcript = transcript.strip()
+        if transcript:
+            log.info("Parakeet STT -> %d chars", len(transcript))
+            return transcript
+    except Exception as exc:
+        log.warning("Parakeet STT transcription failed: %s", exc)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    return None
 
 
 async def _nim_transcribe(audio_bytes: bytes) -> Optional[str]:
@@ -155,24 +231,21 @@ async def _nim_transcribe(audio_bytes: bytes) -> Optional[str]:
 async def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
     """
     Transcribe audio bytes to text.
-    Primary: NVIDIA NIM Whisper Large v3 (if NIM_STT_API_KEY set).
+    Primary: NVIDIA Riva gRPC (Whisper Large v3, confirmed working).
     Fallback: local faster-whisper.
     """
     wav_bytes = _to_wav_bytes(audio_bytes)
 
-    # ── Riva gRPC path ────────────────────────────────────────────────────
+    # ── Riva gRPC PRIMARY (Whisper Large v3) ──────────────────────────────
     services = await _get_riva_services()
     if services:
         asr_service, _, recognition_config_cls, audio_encoding_cls = services
         try:
             config = recognition_config_cls(
                 encoding=audio_encoding_cls.LINEAR_PCM,
-                language_code=cfg.STT_LANGUAGE or "en",
-                model=cfg.STT_MODEL,
+                language_code="en-US",
                 max_alternatives=1,
-                profanity_filter=False,
                 enable_automatic_punctuation=True,
-                verbatim_transcripts=False,
                 sample_rate_hertz=16000,
                 audio_channel_count=1,
             )
@@ -180,30 +253,21 @@ async def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
                 None,
                 lambda: asr_service.offline_recognize(wav_bytes, config),
             )
-            response = await asyncio.wait_for(response_future, timeout=RIVA_CALL_TIMEOUT_SECONDS)
-            pieces = []
-            for result in getattr(response, "results", []):
-                alternatives = getattr(result, "alternatives", [])
-                if alternatives:
-                    transcript = getattr(alternatives[0], "transcript", "").strip()
-                    if transcript:
-                        pieces.append(transcript)
+            response = await asyncio.wait_for(response_future, timeout=15.0)
+            pieces = [
+                alternatives[0].transcript.strip()
+                for result in getattr(response, "results", [])
+                for alternatives in [getattr(result, "alternatives", [])]
+                if alternatives and getattr(alternatives[0], "transcript", "").strip()
+            ]
             transcript = " ".join(pieces).strip()
             if transcript:
                 log.info("Riva STT → %d chars", len(transcript))
                 return transcript
-            log.warning("Riva STT returned no transcript, falling back")
         except Exception as exc:
             log.warning("Riva STT failed: %s", exc)
 
-    # ── NIM cloud path ────────────────────────────────────────────────────
-    if cfg.NIM_STT_API_KEY:
-        result = await _nim_transcribe(wav_bytes)
-        if result:
-            return result
-        log.warning("NIM STT returned nothing, trying local fallback")
-
-    # ── Local faster-whisper fallback ─────────────────────────────────────
+    # ── faster-whisper fallback ───────────────────────────────────────────
     model = await _get_stt_model()
     if model is None:
         return None
@@ -214,19 +278,14 @@ async def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
     try:
         segments, info = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: model.transcribe(
-                tmp_path,
-                language=cfg.STT_LANGUAGE,
-                beam_size=5,
-                vad_filter=True,
-                word_timestamps=False,
-            ),
+            lambda: model.transcribe(tmp_path, language=cfg.STT_LANGUAGE,
+                                     beam_size=5, vad_filter=True, word_timestamps=False),
         )
         text = " ".join(seg.text for seg in segments).strip()
-        log.info("local STT: %.1fs audio → %d chars", info.duration, len(text))
+        log.info("faster-whisper STT: %.1fs → %d chars", info.duration, len(text))
         return text if text else None
     except Exception as exc:
-        log.error("local STT transcription failed: %s", exc)
+        log.error("faster-whisper STT failed: %s", exc)
         return None
     finally:
         try:
@@ -271,6 +330,138 @@ async def _nim_synthesize(text: str, voice: str = "female") -> Optional[bytes]:
     return None
 
 
+async def _get_coqui_tts():
+    """Lazy-load Coqui XTTS-v2 model files and runtime objects."""
+    global _coqui_tts
+    if _coqui_tts is not None:
+        return _coqui_tts
+
+    async with _coqui_lock:
+        if _coqui_tts is not None:
+            return _coqui_tts
+
+        try:
+            os.environ["COQUI_TOS_AGREED"] = "1"
+            from huggingface_hub import snapshot_download
+            from TTS.tts.configs.xtts_config import XttsConfig
+            from TTS.tts.models.xtts import Xtts
+
+            model_repo = "coqui/XTTS-v2"
+            cache_dir = Path.home() / ".cache" / "hc01" / "xtts_v2"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            log.info("Downloading Coqui XTTS checkpoint files from %s", model_repo)
+            model_dir = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: snapshot_download(
+                    repo_id=model_repo,
+                    local_dir=str(cache_dir),
+                    local_dir_use_symlinks=False,
+                    allow_patterns=[
+                        "config.json",
+                        "model.pth",
+                        "vocab.json",
+                        "speakers_xtts.pth",
+                        "dvae.pth",
+                        "mel_stats.pth",
+                        "hash.md5",
+                    ],
+                ),
+            )
+
+            config = XttsConfig()
+            config.load_json(str(Path(model_dir) / "config.json"))
+            model = Xtts.init_from_config(config)
+            model.load_checkpoint(
+                config,
+                checkpoint_dir=str(model_dir),
+                vocab_path=str(Path(model_dir) / "vocab.json"),
+                speaker_file_path=str(Path(model_dir) / "speakers_xtts.pth"),
+                eval=True,
+                use_deepspeed=False,
+            )
+
+            device = cfg.TTS_DEVICE if cfg.TTS_DEVICE in {"cpu", "cuda"} else "cpu"
+            if device == "cuda":
+                model.cuda()
+            else:
+                model.cpu()
+
+            _coqui_tts = {"model": model, "config": config, "model_dir": model_dir, "device": device}
+            log.info("Coqui XTTS loaded")
+        except Exception as exc:
+            log.warning("Coqui TTS unavailable: %s", exc)
+            _coqui_tts = None
+
+    return _coqui_tts
+
+
+async def _coqui_synthesize(text: str, voice: str = "female", speed: float = 1.0) -> Optional[bytes]:
+    """Synthesize speech with Coqui XTTS-v2, returning WAV bytes."""
+    tts = await _get_coqui_tts()
+    if tts is None:
+        return None
+
+    model = tts["model"]
+    speaker_wav = cfg.COQUI_SPEAKER_WAV or None
+    language = cfg.COQUI_LANGUAGE or "en"
+
+    coqui_speaker = None
+    if not speaker_wav:
+        # Use built-in XTTS speaker bank to avoid decoding external reference audio.
+        coqui_speaker = "Ana Florence" if "female" in voice.lower() else "Damien Black"
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        out_path = tmp.name
+
+    try:
+        def _run_xtts():
+            if speaker_wav:
+                gpt_cond_latent, speaker_embedding = model.get_conditioning_latents(
+                    audio_path=[speaker_wav],
+                    gpt_cond_len=6,
+                    gpt_cond_chunk_len=6,
+                    load_sr=22050,
+                )
+                out = model.inference(
+                    text,
+                    language,
+                    gpt_cond_latent,
+                    speaker_embedding,
+                    temperature=0.7,
+                    speed=speed,
+                    enable_text_splitting=True,
+                )
+            else:
+                out = model.synthesize(
+                    text=text,
+                    config=None,
+                    speaker=coqui_speaker,
+                    language=language,
+                    speed=speed,
+                )
+            import numpy as np
+            import soundfile as sf
+
+            wav = np.asarray(out["wav"], dtype="float32")
+            sf.write(out_path, wav, 24000)
+
+        await asyncio.get_event_loop().run_in_executor(None, _run_xtts)
+        with open(out_path, "rb") as fh:
+            audio_bytes = fh.read()
+        if audio_bytes:
+            log.info("Coqui XTTS: synthesized %d bytes", len(audio_bytes))
+            return audio_bytes
+    except Exception as exc:
+        log.warning("Coqui synthesis failed: %s", exc)
+    finally:
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass
+
+    return None
+
+
 async def synthesize_speech(
     text: str,
     voice: str = "female",
@@ -278,45 +469,13 @@ async def synthesize_speech(
 ) -> Optional[bytes]:
     """
     Synthesize text to audio bytes.
-    Primary: NVIDIA NIM Magpie TTS Multilingual (WAV, if NIM_TTS_API_KEY set).
-    Fallback 1: edge-tts (Microsoft neural, MP3, free).
-    Fallback 2: pyttsx3 (local, WAV).
+    Primary: edge-tts (Microsoft Neural, MP3, confirmed working).
+    Fallback: pyttsx3 (local, WAV — last resort only).
     """
     async with _tts_lock:
-        services = await _get_riva_services()
-        if services:
-            _, tts_service, _, audio_encoding_cls = services
-            try:
-                response_future = asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: tts_service.synthesize(
-                        text=text,
-                        voice_name=cfg.NIM_TTS_VOICE,
-                        language_code="en-US",
-                        encoding=audio_encoding_cls.LINEAR_PCM,
-                        sample_rate_hz=24000,
-                    ),
-                )
-                response = await asyncio.wait_for(response_future, timeout=RIVA_CALL_TIMEOUT_SECONDS)
-                audio = getattr(response, "audio", b"")
-                if audio:
-                    log.info("Riva TTS: synthesized %d bytes", len(audio))
-                    return audio
-                log.warning("Riva TTS returned empty audio, falling back")
-            except Exception as exc:
-                log.warning("Riva TTS failed: %s", exc)
-
-        # ── NIM Magpie TTS ────────────────────────────────────────────────
-        if cfg.NIM_TTS_API_KEY:
-            audio = await _nim_synthesize(text, voice)
-            if audio:
-                return audio
-            log.warning("NIM TTS returned nothing, falling back to edge-tts")
-
-        # ── edge-tts fallback (Microsoft Neural, MP3) ─────────────────────
+        # ── edge-tts PRIMARY (Microsoft Neural voices, fast, free) ───────────
         try:
             import edge_tts  # type: ignore
-            import io
             voice_name = "en-US-AriaNeural" if "female" in voice else "en-US-GuyNeural"
             rate_pct = f"+{int((speed - 1.0) * 100)}%" if speed >= 1.0 else f"{int((speed - 1.0) * 100)}%"
             communicate = edge_tts.Communicate(text, voice=voice_name, rate=rate_pct)
@@ -326,14 +485,12 @@ async def synthesize_speech(
                     buf.write(chunk["data"])
             audio_bytes = buf.getvalue()
             if audio_bytes:
-                log.info("edge-tts: synthesized %d bytes", len(audio_bytes))
+                log.info("edge-tts: synthesized %d bytes (MP3)", len(audio_bytes))
                 return audio_bytes
-        except ImportError:
-            pass
         except Exception as exc:
-            log.warning("edge-tts TTS failed: %s", exc)
+            log.warning("edge-tts failed: %s — trying pyttsx3", exc)
 
-        # ── pyttsx3 last-resort fallback ──────────────────────────────────
+        # ── pyttsx3 last-resort ───────────────────────────────────────────────
         try:
             import pyttsx3  # type: ignore
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -341,8 +498,7 @@ async def synthesize_speech(
 
             def _synth():
                 engine = pyttsx3.init()
-                rate   = int(engine.getProperty("rate") * speed)
-                engine.setProperty("rate", rate)
+                engine.setProperty("rate", int(engine.getProperty("rate") * speed))
                 voices = engine.getProperty("voices")
                 if voices:
                     for v in voices:
@@ -357,8 +513,6 @@ async def synthesize_speech(
                 audio_bytes = fh.read()
             os.unlink(tmp_path)
             return audio_bytes if audio_bytes else None
-        except ImportError:
-            pass
         except Exception as exc:
             log.warning("pyttsx3 TTS failed: %s", exc)
 

@@ -1495,9 +1495,12 @@ function handleAgentResult(agent, data) {
       if (data && data.synthesis) {
         state.lastDiag.synthesis = data.synthesis;
         state.lastDiag.handover  = data.handover || '';
+        if (data.alert_level) state.lastDiag.alertLevel = data.alert_level;
         finalizeSynthesis(data.synthesis);
         renderAICard(data.synthesis, data.alert_level || state.lastDiag.alertLevel);
         if (data.handover) showHandover(data.handover);
+        // Auto-speak clinical summary after analysis completes
+        setTimeout(() => autoSpeakReport(), 600);
       }
       break;
     case 'FAMILY_COMMUNICATOR':
@@ -2031,6 +2034,53 @@ async function speakSynthesis() {
   } catch (e) {
     console.error('TTS error:', e);
     if (btn) { btn.textContent = '🔊 Read Aloud'; btn.disabled = false; }
+  }
+}
+
+// ── AUTO-SPEAK AFTER ANALYSIS ────────────────────────────
+async function autoSpeakReport() {
+  // Build concise spoken summary: alert + SOFA + key finding + urgent action
+  const alertLevel = state.lastDiag.alertLevel || '';
+  const sofaObj    = state.lastDiag.sofa;
+  const sofaTotal  = (sofaObj && typeof sofaObj === 'object') ? sofaObj.total : sofaObj;
+  const handover   = state.lastDiag.handover || '';
+  const topAlert   = state.lastDiag.alerts?.[0]?.message || '';
+
+  const parts = [];
+  if (alertLevel) parts.push(`Alert status: ${alertLevel}.`);
+  if (sofaTotal != null && sofaTotal !== '') parts.push(`SOFA score ${sofaTotal}.`);
+
+  if (handover) {
+    const sentences = handover.match(/[^.!?]+[.!?]+/g) || [];
+    if (sentences[0]) parts.push(sentences[0].trim());
+    if (sentences[1]) parts.push(sentences[1].trim());
+  }
+
+  if (topAlert) {
+    const covered = parts.join(' ').toLowerCase();
+    if (!covered.includes(topAlert.toLowerCase().substring(0, 25)))
+      parts.push(topAlert);
+  }
+
+  const ttsText = parts.join(' ').substring(0, 380);
+  if (!ttsText.trim()) return;
+
+  try {
+    const r = await fetch(`${API}/api/voice/synthesize`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ text: ttsText })
+    });
+    const d = await r.json();
+    if (!d.available || !d.audio_b64) { console.warn('Auto-speak TTS unavailable:', d.message); return; }
+    const bytes = Uint8Array.from(atob(d.audio_b64), c => c.charCodeAt(0));
+    const isMp3 = bytes[0] === 0xFF || (bytes[0] === 0x49 && bytes[1] === 0x44); // FF or ID3
+    const blob  = new Blob([bytes], { type: isMp3 ? 'audio/mpeg' : 'audio/wav' });
+    const url   = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.play().catch(e => console.warn('Auto-speak playback blocked:', e));
+    audio.onended = () => URL.revokeObjectURL(url);
+  } catch(e) {
+    console.warn('Auto-speak failed:', e);
   }
 }
 
