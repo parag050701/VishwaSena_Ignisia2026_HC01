@@ -55,3 +55,14 @@ htmlcov/
 .DS_Store
 Thumbs.db
 .claude/                            
+# Stale auto-generated status docs
+COMPLETION_MANIFEST.md
+DELIVERY_SUMMARY.txt
+FINAL_SUMMARY.md
+INTEGRATION_COMPLETE.md
+ENHANCED_ARCHITECTURE.md
+VOICE_ENHANCEMENT_SUMMARY.md
+PROJECT_STATUS.md
+NIM_INTEGRATION.md
+HC01.html
+audit.log
